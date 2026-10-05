@@ -76,6 +76,21 @@ object FlexcilArchive {
     }
 
     /**
+     * True for a backup of several notebooks rather than one .flx document: a .flex name, nested .flx/.flex files,
+     * documents.list, or expanded document folders (pages.index / attachment/PDF below the archive root).
+     */
+    fun isBackup(file: File, name: String?): Boolean {
+        if (name?.substringAfterLast('.', "")?.equals("flex", ignoreCase = true) == true) return true
+        return runCatching { openZip(file).use { z -> z.entries.any { e -> !e.dir && isBackupEntry(e.name) } } }.getOrDefault(false)
+    }
+
+    internal fun isBackupEntry(name: String): Boolean {
+        val n = name.lowercase()
+        return n.endsWith(".flx") || n.endsWith(".flex") || n.endsWith("documents.list") || n.startsWith("flexcilbackup/") ||
+            n.contains("/flexcilbackup/") || n.endsWith("/pages.index") || n.contains("/attachment/pdf/")
+    }
+
+    /**
      * Walks [file] (named [name]) and calls [sink] for every notebook found, in archive order. Temporary files go to
      * [work]. [progress] gets short Korean status lines. Throws IOException when [file] is not a readable ZIP.
      */

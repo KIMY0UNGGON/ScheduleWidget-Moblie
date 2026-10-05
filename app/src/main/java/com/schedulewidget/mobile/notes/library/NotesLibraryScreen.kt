@@ -3,6 +3,7 @@ package com.schedulewidget.mobile.notes
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -85,16 +86,26 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
     val all = notes.orEmpty()
     val folders = remember(all, folderChanges) { NoteFolders.all(context, all) }
 
-    // null = 전체 (all notebooks); new notes and imports go into the selected folder.
+    // The folder being browsed (null = 노트 홈); new notes, new folders and imports go into it.
     var folder by rememberSaveable { mutableStateOf<String?>(null) }
-    if (folder != null && notes != null && folder !in folders) folder = null
+    // A folder we just went to that the (async) lists may not show yet (import, rename): don't bounce out of it.
+    var arriving by rememberSaveable { mutableStateOf<String?>(null) }
+    if (arriving != null && arriving in folders) arriving = null
+    if (folder != null && notes != null && folder !in folders && folder != arriving) {
+        folder = generateSequence(folder) { NoteFolders.parentOf(it) }.firstOrNull { it in folders }
+    }
+    val go = { path: String? -> folder = path; arriving = path }
     var sort by rememberSaveable { mutableStateOf(SORT_RECENT) }
     var query by rememberSaveable { mutableStateOf("") }
+    val openFolder = { path: String -> query = ""; go(path) }
+    BackHandler(enabled = folder != null && query.isBlank()) { go(folder?.let(NoteFolders::parentOf)) }
 
+    // Browsing shows the folders and notebooks directly in [folder]; search looks through every notebook.
+    val subfolders = remember(folders, folder) { NoteFolders.children(folders, folder) }
     val shown = remember(all, folder, sort, query) {
         val q = query.trim()
         val base = if (q.isNotEmpty()) all.filter { it.title.contains(q, ignoreCase = true) }
-        else all.filter { folder == null || it.folder == folder }
+        else all.filter { it.folder?.ifBlank { null } == folder }
         when (sort) {
             SORT_NAME -> Collator.getInstance(Locale.KOREAN).let { c -> base.sortedWith { a, b -> c.compare(a.title, b.title) } }
             else -> base.sortedByDescending { it.updatedAt }
@@ -121,6 +132,13 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
     val pickFiles = { runCatching { pick.launch(FileKind.PICKER_MIMES + "application/octet-stream") }; Unit }
     var flexcilGuide by rememberSaveable { mutableStateOf(false) }
     var report by remember { mutableStateOf<NoteImport.Done?>(null) }
+    fun openImportResult(result: NoteImport.Done) {
+        when {
+            result.importedFolder != null -> openFolder(result.importedFolder)
+            result.count > 1 -> { query = ""; go(null) }
+            else -> onOpen(result.note.id)
+        }
+    }
     val consentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
         val activity = context.findActivity()
         val token = if (r.resultCode == Activity.RESULT_OK && activity != null) {
@@ -136,13 +154,17 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
     LaunchedEffect(done) {
         val d = done ?: return@LaunchedEffect
         NoteImport.consumeDone()
+        // A restored backup is a folder of notebooks: show that folder, never just its first notebook.
+        val imported = d.importedFolder
+        if (imported != null) openFolder(imported)
         if (d.details != null || d.diagnostic != null) {
             report = d
-        } else if (d.open) {
+        } else if (d.open && imported == null) {
             onOpen(d.note.id)
         } else {
-            val r = snackbar.showSnackbar(d.message, actionLabel = "열기", duration = SnackbarDuration.Long)
-            if (r == SnackbarResult.ActionPerformed) onOpen(d.note.id)
+            val label = when { imported != null -> "폴더 열기"; d.count > 1 -> "노트 목록"; else -> "열기" }
+            val r = snackbar.showSnackbar(d.message, actionLabel = label, duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) openImportResult(d)
         }
     }
 
@@ -168,6 +190,22 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
     var renaming by remember { mutableStateOf<NoteMeta?>(null) }
     var moving by remember { mutableStateOf<NoteMeta?>(null) }
     var renamingFolder by remember { mutableStateOf<String?>(null) }
+    val requestRenameFolder: (String) -> Unit = { f ->
+        if (importState is NoteImport.State.Running) scope.launch { snackbar.showSnackbar("가져오기가 끝난 뒤 폴더를 바꿔 주세요") }
+        else renamingFolder = f
+    }
+    // Removing a folder moves its contents up a level; when we are inside it, follow them there.
+    val removeFolder: (String) -> Unit = { f ->
+        scope.launch {
+            if (importState is NoteImport.State.Running) {
+                snackbar.showSnackbar("가져오기가 끝난 뒤 폴더를 바꿔 주세요")
+            } else {
+                val removed = runCatching { NoteFolders.remove(context, f) }.isSuccess
+                if (!removed) snackbar.showSnackbar("폴더를 삭제하지 못했어요")
+                else if (NoteFolders.isWithin(folder, f)) go(NoteFolders.remap(folder, f, NoteFolders.parentOf(f)))
+            }
+        }
+    }
 
     Scaffold(
         containerColor = c.canvas,
@@ -190,23 +228,34 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
                     count = when {
                         notes == null -> "불러오는 중…"
                         query.isNotBlank() -> "검색 결과 ${shown.size}개"
-                        folder != null -> "$folder · 노트 ${shown.size}개"
-                        else -> "노트 ${all.size}개"
+                        else -> listOfNotNull(
+                            folder ?: "전체 노트 ${all.size}개",
+                            subfolders.size.takeIf { it > 0 }?.let { "폴더 ${it}개" },
+                            folder?.let { path -> "전체 노트 ${all.count { NoteFolders.isWithin(it.folder, path) }}개" },
+                        ).joinToString(" · ")
                     },
                     query = query, onQuery = { query = it },
                     sort = sort, onSort = { sort = it },
                     running = importState as? NoteImport.State.Running,
                     showFolders = query.isBlank(),
-                    folders = folders, folder = folder, onFolder = { folder = it },
+                    folder = folder, onFolder = go,
                     onNewFolder = { newFolder = true },
-                    onRenameFolder = { renamingFolder = it },
-                    onRemoveFolder = { f ->
-                        if (folder == f) folder = null
-                        NoteStore.scope.launch { NoteFolders.remove(context, f) }
-                    },
+                    onRenameFolder = requestRenameFolder,
+                    onRemoveFolder = removeFolder,
                 )
             }
-            if (notes != null && shown.isEmpty()) {
+            if (query.isBlank()) items(subfolders, key = { "folder:$it" }) { f ->
+                FolderCard(
+                    name = NoteFolders.leaf(f),
+                    caption = all.count { NoteFolders.isWithin(it.folder, f) }.let { n ->
+                        NoteFolders.children(folders, f).size.takeIf { it > 0 }?.let { "폴더 ${it}개 · 노트 ${n}개" } ?: "노트 ${n}개"
+                    },
+                    onOpen = { go(f) },
+                    onRename = { requestRenameFolder(f) },
+                    onRemove = { removeFolder(f) },
+                )
+            }
+            if (notes != null && shown.isEmpty() && (query.isNotBlank() || subfolders.isEmpty())) {
                 item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                     when {
                         query.isNotBlank() -> EmptyState(
@@ -270,7 +319,9 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
         onPickFile = { runCatching { pick.launch(arrayOf("*/*")) } },
     )
     report?.let { d ->
-        ImportReportDialog(d, onOpen = { onOpen(d.note.id) }, onDismiss = { report = null })
+        ImportReportDialog(
+            d, onOpen = { openImportResult(d) }, onDismiss = { report = null },
+        )
     }
     if (newNote) NewNoteDialog(
         onDismiss = { newNote = false },
@@ -286,16 +337,31 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
     if (newFolder) NameDialog(
         title = "새 폴더", initial = "", confirm = "만들기", placeholder = "폴더 이름",
         onDismiss = { newFolder = false },
-        onDone = { name -> newFolder = false; NoteFolders.add(context, name); folder = name },
+        onDone = { name ->
+            newFolder = false
+            val path = childPath(folder, name)
+            NoteFolders.add(context, path)
+            go(path)
+        },
     )
     renamingFolder?.let { f ->
         NameDialog(
-            title = "폴더 이름 바꾸기", initial = f, confirm = "바꾸기", placeholder = "폴더 이름",
+            title = "폴더 이름 바꾸기", initial = NoteFolders.leaf(f), confirm = "바꾸기", placeholder = "폴더 이름",
             onDismiss = { renamingFolder = null },
             onDone = { name ->
                 renamingFolder = null
-                if (name != f) NoteStore.scope.launch { NoteFolders.rename(context, f, name) }
-                if (folder == f) folder = name
+                val to = childPath(NoteFolders.parentOf(f), name)
+                if (to != f) {
+                    scope.launch {
+                        if (importState is NoteImport.State.Running) {
+                            snackbar.showSnackbar("가져오기가 끝난 뒤 폴더를 바꿔 주세요")
+                        } else {
+                            val renamed = runCatching { NoteFolders.rename(context, f, to) }.isSuccess
+                            if (!renamed) snackbar.showSnackbar("폴더 이름을 바꾸지 못했어요")
+                            else if (NoteFolders.isWithin(folder, f)) go(NoteFolders.remap(folder, f, to))
+                        }
+                    }
+                }
             },
         )
     }
@@ -329,6 +395,12 @@ private fun createBlank(context: Context, title: String, template: String, lands
         }
     }
     return meta
+}
+
+/** Folder [name] inside [parent]; a '/' typed in the name would nest folders, so it becomes '-'. */
+private fun childPath(parent: String?, name: String): String {
+    val leaf = name.replace('/', '-').trim().ifEmpty { "폴더" }
+    return parent?.let { "$it/$leaf" } ?: leaf
 }
 
 private fun safeFileName(title: String) = title.filterNot { it in "\\/:*?\"<>|" || it.code < 32 }.trim().ifBlank { "노트" }

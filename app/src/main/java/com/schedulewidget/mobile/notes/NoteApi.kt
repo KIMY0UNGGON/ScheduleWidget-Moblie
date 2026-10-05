@@ -12,7 +12,7 @@ data class NoteMeta(
     val pageCount: Int,
     /** "pdf", "pptx", "docx", "image" or "blank". */
     val source: String,
-    /** Optional folder name for grouping in the library; null = top level. */
+    /** Optional library folder path ("backup/subject"); '/' separates levels, null = top level. */
     val folder: String? = null,
 )
 

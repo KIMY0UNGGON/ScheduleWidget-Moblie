@@ -4,10 +4,12 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import com.schedulewidget.mobile.notes.NoteImport
 import com.schedulewidget.mobile.notes.NoteStore
+import com.schedulewidget.mobile.notes.library.NoteFolders
 import kotlinx.coroutines.runBlocking
 import java.io.File
 
@@ -25,10 +27,17 @@ class FlexcilRestoreInstrumentation : Instrumentation() {
         val root = File(targetContext.cacheDir, "native-restore-${System.nanoTime()}")
         val files = File(root, "files").apply { mkdirs() }
         val cache = File(root, "cache").apply { mkdirs() }
+        val prefsPrefix = "native_restore_test_${System.nanoTime()}_"
+        val prefsUsed = HashSet<String>()
         val scratch = object : ContextWrapper(targetContext) {
             override fun getApplicationContext(): Context = this
             override fun getFilesDir() = files
             override fun getCacheDir() = cache
+            // Imported backup folders are registered in preferences; keep them out of the device's real list.
+            override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences {
+                prefsUsed += prefsPrefix + name
+                return targetContext.getSharedPreferences(prefsPrefix + name, mode)
+            }
         }
         val results = ArrayList<String>()
         var failures = 0
@@ -38,6 +47,8 @@ class FlexcilRestoreInstrumentation : Instrumentation() {
                 check(restored.isSuccess) { "Import failed: ${restored.exceptionOrNull()}" }
                 val notes = NoteStore.list(scratch)
                 check(notes.size == 3) { "Expected 3 original notebooks, got ${notes.size}" }
+                val backupFolder = File(fixturePath).name.substringBeforeLast('.')
+                check(notes.all { NoteFolders.isWithin(it.folder, backupFolder) }) { "Backup was not restored into its own folder" }
                 var strokes = 0; var blanks = 0; var mixed = 0
                 for (meta in notes) {
                     val note = checkNotNull(NoteStore.load(scratch, meta.id))
@@ -62,6 +73,7 @@ class FlexcilRestoreInstrumentation : Instrumentation() {
             results += "FAIL: ${e.stackTraceToString()}"
         } finally {
             runBlocking { NoteStore.writeMutex.lock(); try { root.deleteRecursively() } finally { NoteStore.writeMutex.unlock() } }
+            prefsUsed.forEach { targetContext.deleteSharedPreferences(it) }
         }
         val text = results.joinToString("\n") + "\nFailures: $failures\n"
         finish(if (failures == 0) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {

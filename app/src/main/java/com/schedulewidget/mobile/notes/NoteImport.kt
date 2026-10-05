@@ -51,7 +51,8 @@ object NoteImport {
     /**
      * A finished import: the (first) notebook, how it was converted, and whether the editor should open right away.
      * [count] notebooks were made (a Flexcil backup or a batch makes several). [details] = things the user should
-     * read (ink not imported, files that failed); [diagnostic] as in [State.Failed].
+     * read (ink not imported, files that failed); [diagnostic] as in [State.Failed]. [importedFolder] = the library
+     * folder to show instead of [note] (a backup's own folder, or the common parent of a batch with backups).
      */
     data class Done(
         val note: NoteMeta,
@@ -60,6 +61,7 @@ object NoteImport {
         val count: Int = 1,
         val details: String? = null,
         val diagnostic: File? = null,
+        val importedFolder: String? = null,
     )
 
     private val _done = MutableStateFlow<Done?>(null)
@@ -82,7 +84,7 @@ object NoteImport {
     internal class ImportError(message: String, val diagnostic: File? = null) : Exception(message)
     private class Outcome(
         val notes: List<NoteMeta>, val message: String, val details: String? = null,
-        val diagnostic: File? = null, val cancelled: Boolean = false,
+        val diagnostic: File? = null, val cancelled: Boolean = false, val importedFolder: String? = null,
     ) {
         val note: NoteMeta get() = notes.first()
     }
@@ -167,7 +169,8 @@ object NoteImport {
                         1 -> try {
                             val o = importOnce(app, uris[0], convert, folder)
                             _state.value = State.Idle
-                            _done.value = Done(o.note, o.message, open && o.notes.size == 1, o.notes.size, o.details, o.diagnostic)
+                            _done.value = Done(o.note, o.message, open && o.notes.size == 1 && o.importedFolder == null,
+                                o.notes.size, o.details, o.diagnostic, o.importedFolder)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Throwable) {
@@ -189,6 +192,9 @@ object NoteImport {
         val notes = ArrayList<NoteMeta>()
         val failed = ArrayList<String>()
         val notices = ArrayList<String>()
+        /** Where each import landed: a backup's folder, or each notebook's folder (null = top level). */
+        val places = ArrayList<String?>()
+        var backups = false
         var diagnostic: File? = null
         var ok = 0
         var attempted = 0
@@ -207,6 +213,8 @@ object NoteImport {
             try {
                 val o = importOnce(app, uri, convert, folder)
                 notes += o.notes
+                if (o.importedFolder != null) backups = true
+                places += o.importedFolder?.let { listOf(it) } ?: o.notes.map { it.folder }
                 ok++
                 o.details?.let { notices += "$name: $it" }
                 o.diagnostic?.let { diagnostic = it }
@@ -241,7 +249,16 @@ object NoteImport {
             if (cancelled && remaining > 0) add("남은 파일 ${remaining}개는 처리하지 않았어요.")
         }.joinToString("\n\n").ifEmpty { null }
         _done.value = Done(notes.first(), message, open = false, count = notes.size,
-            details = if (cancelled && details == null) "가져오기를 취소했어요." else details, diagnostic = diagnostic)
+            details = if (cancelled && details == null) "가져오기를 취소했어요." else details, diagnostic = diagnostic,
+            importedFolder = if (backups) commonFolder(places) else null)
+    }
+
+    /** Deepest folder holding every place; null when any is top level or they share no root (no arbitrary pick). */
+    private fun commonFolder(places: List<String?>): String? {
+        if (places.isEmpty() || places.any { it == null }) return null
+        return places.map { it!!.split('/') }
+            .reduce { a, b -> a.zip(b).takeWhile { (x, y) -> x == y }.map { it.first } }
+            .joinToString("/").ifEmpty { null }
     }
 
     private fun stage(text: String) {
@@ -309,7 +326,8 @@ object NoteImport {
     /** Restores native notebooks, preserving page order, blank pages, original sources and editable ink. */
     private suspend fun flexcil(app: Context, input: File, name: String?, folder: String?, work: File): Outcome {
         val restored = NoteFlexcilImport.restore(app, input, name, folder, work, ::stage)
-        return Outcome(restored.notes, restored.message, restored.details, restored.diagnostic, restored.cancelled)
+        return Outcome(restored.notes, restored.message, restored.details, restored.diagnostic, restored.cancelled,
+            restored.importedFolder)
     }
 
     private fun create(app: Context, pdf: File, title: String, source: String, folder: String?): NoteMeta = try {

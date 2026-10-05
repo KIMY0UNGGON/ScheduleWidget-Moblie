@@ -43,4 +43,8 @@
         android:name="com.schedulewidget.mobile.AppUpdateInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="GitHub update and bundled pet regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.FlexFolderInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Backup folder and PDF connection regression" />
 </manifest>

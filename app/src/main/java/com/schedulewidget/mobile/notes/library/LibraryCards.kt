@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -110,6 +111,41 @@ internal fun NotebookCard(
                         icon = Icons.Outlined.Delete, danger = true,
                     )
                 }
+            }
+        }
+    }
+}
+
+// ---- folder card ----
+
+/** A folder in the grid, the same size as a notebook card; tap enters it, long-press / ⋮ renames or removes it. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun FolderCard(name: String, caption: String, onOpen: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+    val c = NotesTokens.colors
+    var menu by remember { mutableStateOf(false) }
+    Column(Modifier.clip(NotesShapes.sm).combinedClickable(onClick = onOpen, onLongClick = { menu = true })) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(0.75f).clip(NotesShapes.sm)
+                .background(c.canvasSoft)
+                .border(1.dp, c.hairlineSoft, NotesShapes.sm),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Folder, null, tint = c.muted, modifier = Modifier.size(56.dp))
+        }
+        Row(Modifier.padding(top = NotesSpace.sm), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(start = NotesSpace.xxs)) {
+                Text(name, style = NotesTokens.type.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(2.dp))
+                Text(caption, style = NotesTokens.type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box {
+                NotesIconButton(Icons.Filled.MoreVert, "더보기", onClick = { menu = true }, size = 32.dp, tint = c.muted)
+                FolderMenu(
+                    expanded = menu, onDismiss = { menu = false },
+                    onRename = { menu = false; onRename() },
+                    onRemove = { menu = false; onRemove() },
+                )
             }
         }
     }

@@ -66,6 +66,44 @@ class FlexcilNativeRestoreTest {
         assertTrue(work.listFiles()!!.isEmpty())
     }
 
+    @Test fun loosePdfsBesideARootDocumentAreRestoredOnceWithoutDuplicatingAttachments() {
+        val nested = zip(
+            "info" to """{"name":"nested"}""".toByteArray(),
+            "pages.index" to """[{"key":"n1","attachmentPage":{"file":"N","index":0}}]""".toByteArray(),
+            "attachment/PDF/N" to pdf,
+        )
+        val file = tmp.newFile("loose.flex")
+        file.writeBytes(zip(
+            "info" to """{"name":"root"}""".toByteArray(),
+            "pages.index" to """[
+              {"key":"a","attachmentPage":{"file":"A","index":0}},
+              {"key":"blank","frame":{"width":595,"height":842}},
+              {"key":"c","attachmentPage":{"file":"C.pdf","index":0}}
+            ]""".toByteArray(),
+            "attachment/PDF/A" to pdf, "attachment/PDF/C.pdf" to pdf,
+            "objects/a.drawings" to drawing().toByteArray(),
+            "extra.pdf" to pdf,
+            "flexcilbackup/Documents/과목/handout.PDF" to pdf,
+            "flexcilbackup/Documents/과목/nested.flx" to nested,
+        ))
+        val work = tmp.newFolder()
+        val docs = ArrayList<FlexcilDocument>()
+        val result = FlexcilArchive.restore(file, file.name, work) { docs += it }
+
+        assertEquals(listOf("root", "extra", "handout", "nested"), docs.map { it.title })
+        val root = docs[0]
+        assertEquals(setOf("A", "C"), root.pdfs.keys)
+        assertEquals(listOf("A", null, "C"), root.pages!!.map { it.pdfKey })
+        assertEquals(1, root.pages[0].strokes.size)
+        assertNull(docs[1].folder)
+        assertEquals("과목", docs[2].folder)
+        assertEquals("과목", docs[3].folder)
+        assertEquals("every PDF entry becomes exactly one background", 5, docs.sumOf { it.pdfs.size })
+        assertEquals(4, result.books)
+        assertEquals(0, result.failedDocs)
+        assertTrue(work.listFiles()!!.isEmpty())
+    }
+
     @Test fun allBlankNotebookDoesNotNeedAPdfAttachment() {
         val file = tmp.newFile("blank.flx")
         file.writeBytes(zip("info" to """{"name":"빈 노트"}""".toByteArray(),

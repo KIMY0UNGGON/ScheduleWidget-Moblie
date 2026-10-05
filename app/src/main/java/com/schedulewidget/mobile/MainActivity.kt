@@ -20,6 +20,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null && NoteOpenWith.handle(this, intent)) route.value = Route.Notes
         setContent {
             AppTheme {
+                val homeState = rememberSaveableStateHolder()
                 val registerEditorExit = remember {
                     { handler: ((() -> Unit) -> Unit)? -> editorExit = handler }
                 }
@@ -93,10 +95,12 @@ class MainActivity : ComponentActivity() {
                     YouTubeHost()
                     when (route.value) {
                         // The board, and with 수업 녹음 on the "달력 | 녹음" tabs (Recordings is the 녹음 tab).
-                        Route.Mini, Route.Recordings, Route.Notes -> HomeTabs(
-                            route.value, navigate = navigate,
-                            openNote = { noteId.value = it; navigate(Route.NoteEditor) },
-                        )
+                        Route.Mini, Route.Recordings, Route.Notes -> homeState.SaveableStateProvider(route.value.name) {
+                            HomeTabs(
+                                route.value, navigate = navigate,
+                                openNote = { noteId.value = it; navigate(Route.NoteEditor) },
+                            )
+                        }
                         // notes: a notebook full-screen; back returns to the 노트 tab.
                         Route.NoteEditor -> {
                             val id = noteId.value

@@ -75,8 +75,12 @@ internal class FlexcilArchiveWalker(
             for (root in roots) {
                 checkActive()
                 val rootLower = root.lowercase()
-                entries.filter { it.name.lowercase().startsWith(rootLower) && !isNestedArchive(it.name.substring(root.length)) }
-                    .forEach { claimed += it.name }
+                // A root "" spans the whole archive: only its attachment/ PDFs are its own, other PDFs stay loose.
+                entries.filter {
+                    val lower = it.name.lowercase()
+                    lower.startsWith(rootLower) && !isNestedArchive(lower) &&
+                        (!lower.endsWith(".pdf") || lower.startsWith(rootLower + "attachment/pdf/"))
+                }.forEach { claimed += it.name }
                 try {
                     readDocument(zip, entries, byLower, root, ctx, file)
                 } catch (e: Exception) {

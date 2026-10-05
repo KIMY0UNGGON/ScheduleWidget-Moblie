@@ -102,14 +102,19 @@ private fun GuideStep(number: Int, title: String, body: String) {
     }
 }
 
-/** The outcome of an import the user should read (ink not imported, failed files), with "열기" and the diagnostics. */
+/**
+ * The outcome of an import the user should read (ink not imported, failed files), with "열기" (or "폴더 열기" for a
+ * restored backup, which [onOpen] shows as its folder) and the diagnostics.
+ */
 @Composable
 internal fun ImportReportDialog(done: NoteImport.Done, onOpen: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     NotesDialog(
         onDismissRequest = onDismiss,
         title = done.message,
-        confirmButton = { NotesPill("열기", onClick = { onDismiss(); onOpen() }, small = true) },
+        confirmButton = {
+            NotesPill(when { done.importedFolder != null -> "폴더 열기"; done.count > 1 -> "노트 목록"; else -> "열기" }, onClick = { onDismiss(); onOpen() }, small = true)
+        },
         dismissButton = { NotesPill("확인", onClick = onDismiss, style = PillStyle.Soft, small = true) },
     ) {
         Column(Modifier.verticalScroll(rememberScrollState())) {

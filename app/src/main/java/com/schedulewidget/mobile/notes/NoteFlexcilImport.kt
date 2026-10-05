@@ -7,6 +7,7 @@ import com.schedulewidget.mobile.notes.importer.FlexcilDocument
 import com.schedulewidget.mobile.notes.importer.FlexcilInk
 import com.schedulewidget.mobile.notes.ink.PageInfo
 import com.schedulewidget.mobile.notes.ink.PageInk
+import com.schedulewidget.mobile.notes.library.NoteFolders
 import com.schedulewidget.mobile.notes.render.PdfDoc
 import com.schedulewidget.mobile.notes.render.PdfThread
 import kotlinx.coroutines.CancellationException
@@ -22,6 +23,8 @@ internal object NoteFlexcilImport {
     class Result(
         val notes: List<NoteMeta>, val message: String, val details: String?, val diagnostic: File? = null,
         val cancelled: Boolean = false,
+        /** The backup's own library folder (holds every restored notebook); null for a single .flx document. */
+        val importedFolder: String? = null,
     )
 
     suspend fun restore(
@@ -29,6 +32,11 @@ internal object NoteFlexcilImport {
     ): Result {
         stage(".flex/.flx 원본 노트 복원 중")
         val job = currentCoroutineContext().job
+        // A backup gets one folder named after the file; its notebooks keep their original subfolders below it.
+        val root = if (FlexcilArchive.isBackup(input, name)) backupFolder(app, name, folder) else null
+        val target: (FlexcilDocument) -> String? = { book ->
+            if (root == null) book.folder ?: folder else listOfNotNull(root, book.folder).joinToString("/")
+        }
         val notes = ArrayList<NoteMeta>()
         var strokes = 0
         var originals = 0
@@ -41,7 +49,9 @@ internal object NoteFlexcilImport {
         val result = try {
             FlexcilArchive.restoreCancellable(input, name, work, progress = stage, checkActive = { job.ensureActive() }) { book ->
                 job.ensureActive()
-                val restored = runBlocking { restoreBook(app, book, folder, nextId) }
+                val restored = runBlocking { restoreBook(app, book, target(book), nextId) }
+                // Registered only once something was saved, so a failed backup leaves no empty folder behind.
+                if (notes.isEmpty() && root != null) NoteFolders.add(app, root)
                 notes += restored.first
                 nextId += restored.second
                 strokes += restored.second
@@ -50,11 +60,13 @@ internal object NoteFlexcilImport {
         } catch (e: CancellationException) {
             if (notes.isEmpty()) throw e
             return Result(notes, "노트 ${notes.size}개를 복원했어요",
-                "가져오기를 취소했어요. 먼저 복원한 노트 ${notes.size}개는 저장했습니다. ${originalNotice()}", cancelled = true)
+                "가져오기를 취소했어요. 먼저 복원한 노트 ${notes.size}개는 저장했습니다. ${originalNotice()}", cancelled = true,
+                importedFolder = root)
         } catch (e: FlexcilArchive.FlexcilError) {
             val diagnostic = diagnostic(app, e.report)
             if (notes.isEmpty()) throw NoteImport.ImportError(".flex/.flx 노트를 복원하지 못했어요: ${e.message}", diagnostic)
-            return Result(notes, "노트 ${notes.size}개를 복원했어요", "일부 노트를 읽지 못했어요: ${e.message}", diagnostic)
+            return Result(notes, "노트 ${notes.size}개를 복원했어요", "일부 노트를 읽지 못했어요: ${e.message}", diagnostic,
+                importedFolder = root)
         }
         if (notes.isEmpty()) throw NoteImport.ImportError(
             when {
@@ -72,7 +84,15 @@ internal object NoteFlexcilImport {
             if (otherFailures > 0) add("노트 ${otherFailures}개는 읽지 못했어요. 원본 백업 파일은 그대로 있습니다.")
         }.joinToString("\n").ifBlank { null }
         return Result(notes, "노트 ${notes.size}개를 복원했어요" + if (strokes > 0) " · 필기 ${strokes}개" else "",
-            details, details?.let { diagnostic(app, result.report) })
+            details, details?.let { diagnostic(app, result.report) }, importedFolder = root)
+    }
+
+    /** "<selected folder>/<backup file name>", made unique among existing folders (implied parents included). */
+    private fun backupFolder(app: Context, name: String?, parent: String?): String {
+        val base = name?.substringAfterLast('/')?.substringAfterLast('\\')?.let(FlexcilArchive::stripExt)
+            ?.trim()?.takeIf { it.isNotEmpty() } ?: "가져온 백업"
+        val candidate = parent?.takeIf { it.isNotBlank() }?.let { "$it/$base" } ?: base
+        return NoteFolders.uniquePath(candidate, NoteFolders.all(app, NoteStore.list(app)))
     }
 
     private suspend fun restoreBook(app: Context, book: FlexcilDocument, folder: String?, firstId: Long): Pair<NoteMeta, Int> {
@@ -114,7 +134,7 @@ internal object NoteFlexcilImport {
             }
         }
         if (pages.isEmpty()) throw IOException("노트에 페이지가 없어요")
-        val meta = NoteStore.createRestored(app, book.title, book.folder ?: folder, pages, sources, inks,
+        val meta = NoteStore.createRestored(app, book.title, folder, pages, sources, inks,
             book.original, book.createdAt, book.updatedAt)
         return meta to (nextId - firstId).toInt()
     }

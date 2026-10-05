@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.schedulewidget.mobile.notes.library.NoteFolders
 import com.schedulewidget.mobile.notes.library.NotesField
 import com.schedulewidget.mobile.notes.library.NotesMenu
 import com.schedulewidget.mobile.notes.library.NotesMenuItem
@@ -57,7 +59,7 @@ import com.schedulewidget.mobile.notes.ui.NotesSpace
 import com.schedulewidget.mobile.notes.ui.NotesTokens
 import com.schedulewidget.mobile.notes.ui.PillStyle
 
-// ---- header: heading, search, sort, import progress, folder chips ----
+// ---- header: heading, search, sort, import progress, folder breadcrumbs ----
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -69,7 +71,6 @@ internal fun LibraryHeader(
     onSort: (String) -> Unit,
     running: NoteImport.State.Running?,
     showFolders: Boolean,
-    folders: List<String>,
     folder: String?,
     onFolder: (String?) -> Unit,
     onNewFolder: () -> Unit,
@@ -113,6 +114,8 @@ internal fun LibraryHeader(
         }
         if (showFolders) {
             Spacer(Modifier.height(NotesSpace.md))
+            // Breadcrumbs: 노트 홈 › 상위 폴더 › 지금 폴더. Tap one to go back up; long-press a folder to rename / remove it.
+            val crumbs = remember(folder) { generateSequence(folder) { NoteFolders.parentOf(it) }.toList().reversed() }
             // The chips row bleeds to the screen edges so chips scroll under the gutter instead of being cut at it.
             LazyRow(
                 modifier = Modifier.bleed(Gutter),
@@ -120,20 +123,24 @@ internal fun LibraryHeader(
                 horizontalArrangement = Arrangement.spacedBy(NotesSpace.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                item(key = "all") { NotesChip("전체", selected = folder == null, onClick = { onFolder(null) }) }
-                items(folders, key = { "f:$it" }) { f ->
-                    Box {
-                        NotesChip(
-                            f,
-                            selected = folder == f,
-                            modifier = Modifier.clip(NotesShapes.full)
-                                .combinedClickable(onClick = { onFolder(f) }, onLongClick = { folderMenu = f }),
-                        )
-                        FolderMenu(
-                            expanded = folderMenu == f, onDismiss = { folderMenu = null },
-                            onRename = { folderMenu = null; onRenameFolder(f) },
-                            onRemove = { folderMenu = null; onRemoveFolder(f) },
-                        )
+                item(key = "home") { NotesChip("노트 홈", selected = folder == null, onClick = { onFolder(null) }) }
+                items(crumbs, key = { "f:$it" }) { f ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = c.faint, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(NotesSpace.xs))
+                        Box {
+                            NotesChip(
+                                NoteFolders.leaf(f),
+                                selected = folder == f,
+                                modifier = Modifier.clip(NotesShapes.full)
+                                    .combinedClickable(onClick = { onFolder(f) }, onLongClick = { folderMenu = f }),
+                            )
+                            FolderMenu(
+                                expanded = folderMenu == f, onDismiss = { folderMenu = null },
+                                onRename = { folderMenu = null; onRenameFolder(f) },
+                                onRemove = { folderMenu = null; onRemoveFolder(f) },
+                            )
+                        }
                     }
                 }
                 item(key = "new") { NewFolderChip(onNewFolder) }
@@ -187,7 +194,7 @@ private fun ImportProgress(stage: String, detail: String?) {
 }
 
 @Composable
-private fun FolderMenu(expanded: Boolean, onDismiss: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+internal fun FolderMenu(expanded: Boolean, onDismiss: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
     var armed by remember(expanded) { mutableStateOf(false) }
     NotesMenu(expanded, onDismissRequest = onDismiss) {
         NotesMenuItem("폴더 이름 바꾸기", onClick = onRename, icon = Icons.Outlined.Edit)
