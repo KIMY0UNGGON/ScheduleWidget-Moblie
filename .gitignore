@@ -1,0 +1,15 @@
+/.gradle/
+/.kotlin/
+/.idea/
+**/build/
+local.properties
+*.iml
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
+client_secret*.json
+credentials*.json
+/.snapshots/
+/output/

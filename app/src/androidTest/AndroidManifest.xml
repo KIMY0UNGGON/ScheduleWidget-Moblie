@@ -1,0 +1,42 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="com.schedulewidget.mobile.AuditInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Existing note and sync regressions" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.ParityInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Schedule parity regressions" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.NoteDeletionInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Note deletion regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.FlexcilRestoreInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Native Flexcil restore regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.EditorGestureInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Editor gesture regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.NoteStoreSafetyInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Note store safety regressions" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.NoteOpenWithUriSafetyInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Shared URI safety regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.notes.editor.InkInputTakeoverInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Editor takeover and concurrent save regressions" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.PrivacyInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Document consent and token backup regressions" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.EditorKeyUiInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Real editor key route regression" />
+</manifest>

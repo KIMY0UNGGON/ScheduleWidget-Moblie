@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- music/ : volume boost effects on this app's own playback sessions. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Floating pet over other apps (pet/PetOverlayService). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- reminders/ : deadline reminders at the exact minute (without it they may come a few minutes late). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- record/ : lecture recording (수업 녹음) that keeps going with the screen off. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- stt/ : speech-model downloads run as a dataSync foreground service (transcription uses SPECIAL_USE above). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Lets the music-apps editor list installed media players (Spotify, YouTube Music, Melon, ...). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="audio/*" />
+        </intent>
+        <!-- notes/ : "Flexcil 열기" in the Flexcil import guide. -->
+        <package android:name="com.flexcil.flexcilnote" />
+    </queries>
+
+    <application
+        android:name=".ScheduleApp"
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ScheduleWidget">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- notes/ : "열기" / "공유" of a PDF, PPT or Word file from other apps imports it into 노트 (MainActivity).
+             Flexcil exports (.flex backup / .flx document) arrive as zip or octet-stream; NoteOpenWith checks the name. -->
+        <activity-alias
+            android:name=".notes.OpenWithNotes"
+            android:exported="true"
+            android:label="노트로 가져오기"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.ms-powerpoint" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- ui/ : quick "일정 추가" dialog for the calendar widget and the floating pet's calendar. -->
+        <activity
+            android:name=".ui.QuickAddActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="일정 추가"
+            android:taskAffinity=""
+            android:theme="@style/Theme.ScheduleWidget.Translucent"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
+
+        <!-- music/ : "공유" from YouTube / YouTube Music adds the song or playlist to a widget playlist. -->
+        <activity
+            android:name=".music.ShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="플레이리스트에 추가"
+            android:taskAffinity=""
+            android:theme="@style/Theme.ScheduleWidget.Translucent">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- pet/ : home-screen "모바일 신분증" shortcut target (opens 순천향톡's ID, no UI of its own). -->
+        <activity
+            android:name=".pet.IdShortcutActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="모바일 신분증"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- pet/ : presses 순천향톡's "모바일 신분증" after our 신분증 button (accessibility, 순천향톡 only). -->
+        <service
+            android:name=".pet.IdAutoOpenService"
+            android:exported="true"
+            android:label="@string/id_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/id_accessibility" />
+        </service>
+
+        <!-- music/ : in-app playlist playback (Media3). -->
+        <service
+            android:name=".music.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- apps/ : notification access is what Android requires to read/control other apps' media sessions. -->
+        <service
+            android:name=".apps.MediaListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- pet/ : the pet floating over other apps, kept alive after the app is closed. -->
+        <!-- stt/ : on-device speech recognition: model downloads and lecture transcription keep running in the background. -->
+        <service
+            android:name=".stt.SttDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".stt.TranscribeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device speech-to-text of the user's own lecture recordings; long CPU-bound work the user started and can cancel from the notification" />
+        </service>
+
+        <service
+            android:name=".pet.PetOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Desktop-pet style companion character drawn over other apps at the user's request" />
+        </service>
+        <receiver
+            android:name=".pet.FloatingPetBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- record/ : lecture recording as a microphone foreground service. -->
+        <service
+            android:name=".record.RecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+        <!-- record/ : invisible helper the floating pet opens to ask for the microphone / start recording. -->
+        <activity
+            android:name=".record.RecordPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- record/ : shares recordings (audio files) with other apps. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- reminders/ : deadline reminder alarm, the notification's "완료" button, and re-arming after reboot/clock changes. -->
+        <receiver
+            android:name=".reminders.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- widget/ : home-screen widgets (Glance). -->
+        <receiver
+            android:name=".widget.CalendarWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_calendar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.MusicWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_music">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/music_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.PlaylistWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_playlist">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/playlist_widget_info" />
+        </receiver>
+    </application>
+</manifest>

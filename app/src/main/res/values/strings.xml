@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">일정 위젯</string>
+    <string name="widget_calendar">미니 달력</string>
+    <string name="widget_music">음악 막대</string>
+    <string name="widget_calendar_desc">일정과 D-day가 보이는 주간 달력</string>
+    <string name="widget_music_desc">위젯 플레이리스트와 음악 앱 조작</string>
+    <string name="widget_playlist">플레이리스트</string>
+    <string name="widget_playlist_desc">위젯 플레이리스트 곡 목록, 눌러서 재생</string>
+    <string name="id_service_label">일정 위젯 · 신분증 바로 열기</string>
+    <string name="id_service_desc">펫의 신분증 버튼이나 홈 화면 바로가기를 누른 직후에만, 순천향톡 화면에서 모바일 신분증 버튼을 대신 눌러 줍니다. 순천향톡 외의 앱 화면은 읽지 않고, 어떤 내용도 저장하지 않습니다.</string>
+</resources>

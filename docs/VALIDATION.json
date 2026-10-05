@@ -1,0 +1,21 @@
+{
+  "Project": "ScheduleWidget-mobile-notes",
+  "Unit": {
+    "Tests": 151,
+    "Failures": 0,
+    "Errors": 0,
+    "Skipped": 0
+  },
+  "LintErrors": 0,
+  "LintWarnings": 88,
+  "RuntimeSuites": 10,
+  "RuntimePassed": 10,
+  "DeviceApi": 35,
+  "RealFlexNotebooks": 45,
+  "RealFlexPages": 1626,
+  "RealFlexStrokes": 6867,
+  "PrivacySupportEmail": "ddd84860@gmail.com",
+  "RepositoryPrivate": true,
+  "GcpConsoleRegistration": "Not verified: no connected authenticated browser",
+  "ApkSHA256": "319943F3BA0BE5484CBB2FC78CD452A5624D580CE950B3C7199A5346446351AC"
+}

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_bg"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹"
+            android:textColor="#5B61D6"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:text="이번 주"
+            android:textColor="#3A3530"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingEnd="8dp"
+            android:text="D-3"
+            android:textColor="#5B61D6"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+  ›"
+            android:textColor="#5B61D6"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <TextView style="@style/WidgetPreviewDay" android:text="월\n회의" />
+        <TextView style="@style/WidgetPreviewDay" android:text="화" />
+        <TextView style="@style/WidgetPreviewDay" android:background="#E9E8FA" android:text="수\n과제" />
+        <TextView style="@style/WidgetPreviewDay" android:text="목" />
+        <TextView style="@style/WidgetPreviewDay" android:text="금\n약속" />
+        <TextView style="@style/WidgetPreviewDay" android:text="토" android:textColor="#3F6FD8" />
+        <TextView style="@style/WidgetPreviewDay" android:text="일" android:textColor="#D9534F" />
+    </LinearLayout>
+</LinearLayout>
