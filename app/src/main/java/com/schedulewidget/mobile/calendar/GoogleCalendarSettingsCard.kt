@@ -1,9 +1,6 @@
 package com.schedulewidget.mobile.calendar
 
 import android.widget.Toast
-import androidx.activity.compose.LocalActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,9 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.schedulewidget.mobile.data.AppData
-import com.schedulewidget.mobile.data.Repository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -42,86 +36,21 @@ internal class GoogleCalendarSettingsState {
     val confirmSignOut = mutableStateOf(false)
 }
 
+internal data class GoogleCalendarSettingsActions(
+    val onEnabledChange: (Boolean) -> Unit,
+    val onSync: () -> Unit,
+    val onSignOut: () -> Unit,
+)
+
 @Composable
-internal fun GoogleCalendarSettingsCard(data: AppData, repo: Repository, scope: CoroutineScope, state: GoogleCalendarSettingsState) {
+internal fun GoogleCalendarSettingsCard(data: AppData, state: GoogleCalendarSettingsState, actions: GoogleCalendarSettingsActions) {
     val context = LocalContext.current
-    val activity = LocalActivity.current
     val uriHandler = LocalUriHandler.current
     var googleBusy by state.busy
     var googleStatus by state.status
     var confirmSignOut by state.confirmSignOut
 
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-
-    fun disableGoogle(msg: String?) {
-        googleStatus = msg
-        repo.update { it.copy(googleCalendar = it.googleCalendar.copy(enabled = false)) }
-        GoogleCalendarSync.schedulePeriodic(context)
-    }
-
-    fun runGoogle(token: String) {
-        scope.launch {
-            googleBusy = true
-            googleStatus = "구글 캘린더와 맞추는 중…"
-            runCatching { GoogleCalendarSync.sync(context, token) }
-                .onSuccess { o ->
-                    GoogleCalendarSync.schedulePeriodic(context)
-                    if (o.more) GoogleCalendarSync.requestMore(context)
-                    googleStatus = "동기화 완료 · 가져옴 ${o.added} · 보냄 ${o.sent} · 바뀜 ${o.updated}" +
-                        (if (o.deleted > 0) " · 구글에서 삭제 ${o.deleted}" else "") +
-                        (if (o.refused > 0) " · 구글이 받지 않음 ${o.refused}" else "") +
-                        (if (o.more) " · 나머지는 곧 이어서 보냅니다" else "")
-                }
-                .onFailure { googleStatus = it.message ?: "동기화하지 못했습니다." }
-            googleBusy = false
-        }
-    }
-
-    val googleConsent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        googleBusy = false
-        val act = activity ?: return@rememberLauncherForActivityResult
-        if (r.resultCode != android.app.Activity.RESULT_OK) {
-            disableGoogle("로그인이 끝나지 않았습니다.")
-            return@rememberLauncherForActivityResult
-        }
-        when (val auth = GoogleCalendarSync.tokenFrom(act, r.data)) {
-            is GoogleCalendarSync.Auth.Token -> runGoogle(auth.value)
-            is GoogleCalendarSync.Auth.Failed -> disableGoogle(auth.message)
-            is GoogleCalendarSync.Auth.NeedsConsent -> Unit
-        }
-    }
-
-    fun startGoogle() {
-        if (googleBusy) return
-        // Busy while asking too, so a second tap can't open a second consent screen.
-        googleBusy = true
-        scope.launch {
-            googleStatus = "구글 계정 확인 중…"
-            val auth = GoogleCalendarSync.authorize(activity ?: context)
-            googleBusy = false
-            when (auth) {
-                is GoogleCalendarSync.Auth.Token -> runGoogle(auth.value)
-                is GoogleCalendarSync.Auth.NeedsConsent -> {
-                    googleBusy = true
-                    runCatching { googleConsent.launch(auth.request) }
-                        .onFailure { googleBusy = false; disableGoogle(it.message) }
-                }
-                is GoogleCalendarSync.Auth.Failed -> disableGoogle(auth.message)
-            }
-        }
-    }
-
-    fun signOutGoogle() {
-        if (googleBusy) return
-        googleBusy = true
-        confirmSignOut = false
-        scope.launch {
-            runCatching { GoogleCalendarSync.signOut(context) }
-                .onSuccess { googleStatus = "이 기기의 구글 캘린더 연결 정보를 지웠습니다. 구글 권한과 캘린더 일정은 그대로 남습니다." }
-                .onFailure { googleStatus = it.message ?: "연결을 해제하지 못했습니다." }
-            googleBusy = false
-        }
-    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -134,15 +63,12 @@ internal fun GoogleCalendarSettingsCard(data: AppData, repo: Repository, scope: 
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = data.googleCalendar.enabled, enabled = !googleBusy, onCheckedChange = { enabled ->
-                    repo.update { it.copy(googleCalendar = it.googleCalendar.copy(enabled = enabled)) }
-                    if (enabled) startGoogle() else { googleStatus = null; GoogleCalendarSync.schedulePeriodic(context) }
-                })
+                Switch(checked = data.googleCalendar.enabled, enabled = !googleBusy, onCheckedChange = actions.onEnabledChange)
             }
             if (data.googleCalendar.enabled) {
                 data.googleCalendar.account?.let { Text("계정: $it", style = MaterialTheme.typography.bodySmall) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { startGoogle() }, enabled = !googleBusy) { Text("지금 동기화") }
+                    OutlinedButton(onClick = actions.onSync, enabled = !googleBusy) { Text("지금 동기화") }
                     if (googleBusy) CircularProgressIndicator(Modifier.padding(start = 12.dp).size(20.dp), strokeWidth = 2.dp)
                 }
                 Text(
@@ -164,7 +90,7 @@ internal fun GoogleCalendarSettingsCard(data: AppData, repo: Repository, scope: 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (confirmSignOut) {
                         Button(
-                            onClick = { signOutGoogle() }, enabled = !googleBusy,
+                            onClick = actions.onSignOut, enabled = !googleBusy,
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         ) { Text("정말 해제") }
                         TextButton(onClick = { confirmSignOut = false }) { Text("취소") }
