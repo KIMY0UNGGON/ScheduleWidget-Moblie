@@ -71,7 +71,7 @@ internal object PageImport {
                     withContext(Dispatchers.IO) { imagesToPdf(listOf(input), out) }
                 }
                 FileKind.PPTX, FileKind.DOCX, FileKind.PPT, FileKind.DOC -> office(app, input, kind, title, work, stage)
-                FileKind.FLEXCIL -> throw IOException("Flexcil 파일은 노트 목록에서 가져와 주세요")
+                FileKind.FLEXCIL -> throw IOException(".flex/.flx 파일은 노트 목록에서 가져와 주세요")
                 else -> throw IOException("지원하지 않는 파일이에요. PDF, PPT, Word, 사진을 넣을 수 있어요")
             }
             stage("페이지 준비 중")

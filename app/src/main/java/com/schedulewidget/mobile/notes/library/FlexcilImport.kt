@@ -41,7 +41,7 @@ import java.io.File
 /** Flexcil's Android package (its notebooks live in its private storage, so we import its exports). */
 internal const val FLEXCIL_PACKAGE = "com.flexcil.flexcilnote"
 
-/** "Flexcil에서 가져오기": how to get notebooks out of Flexcil, with the picker and a shortcut into Flexcil. */
+/** ".flex/.flx 노트 가져오기": how to export notebooks from the original notes app, with the picker and a shortcut into it. */
 @Composable
 internal fun FlexcilGuideDialog(onDismiss: () -> Unit, onPickFile: () -> Unit) {
     val context = LocalContext.current
@@ -49,28 +49,28 @@ internal fun FlexcilGuideDialog(onDismiss: () -> Unit, onPickFile: () -> Unit) {
     val launch = remember { context.packageManager.getLaunchIntentForPackage(FLEXCIL_PACKAGE) }
     NotesDialog(
         onDismissRequest = onDismiss,
-        title = "Flexcil에서 가져오기",
+        title = ".flex/.flx 노트 가져오기",
         confirmButton = { NotesPill("닫기", onClick = onDismiss, style = PillStyle.Soft, small = true) },
     ) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NotesSpace.sm)) {
             Text(
-                "Flexcil 노트는 Flexcil 앱 안에 저장돼 있어서 바로 읽을 수 없어요. 아래 방법 중 하나로 내보내 주세요.",
+                "원본 노트 앱의 노트는 그 앱 안에 저장돼 있어서 바로 읽을 수 없어요. 원본 노트 앱의 백업·내보내기 메뉴로 아래 방법 중 하나를 따라 내보내 주세요.",
                 style = NotesTokens.type.body.copy(color = c.muted),
             )
             GuideStep(
                 1, "원본 노트 복원 (추천)",
-                "Flexcil 설정 → 백업 → .flex 파일 만들기 → 여기서 ‘파일 선택’. 노트별 폴더·페이지 순서·빈 페이지·필기를 복원합니다. 가져온 필기는 수정하거나 지울 수 있어요.",
+                "원본 노트 앱 설정 → 백업 → .flex 파일 만들기 → 여기서 ‘파일 선택’. 노트별 폴더·페이지 순서·빈 페이지·필기를 복원합니다. 가져온 필기는 수정하거나 지울 수 있어요.",
             )
             GuideStep(
                 2, "문서 하나만 가져오기",
-                "Flexcil에서 문서를 .flx 원본으로 내보내 ‘파일 선택’으로 가져오세요. PDF 배경과 필기를 별도로 복원하고 원본 .flx도 보관합니다.",
+                "원본 노트 앱에서 문서를 .flx 원본으로 내보내 ‘파일 선택’으로 가져오세요. PDF 배경과 필기를 별도로 복원하고 원본 .flx도 보관합니다.",
             )
             Text("PDF로 내보낸 파일도 열 수 있습니다. PDF에 합쳐진 기존 필기는 별도로 지우거나 선택할 수 없어요.", style = NotesTokens.type.caption)
             Row(horizontalArrangement = Arrangement.spacedBy(NotesSpace.xs), modifier = Modifier.fillMaxWidth().padding(top = NotesSpace.xxs)) {
                 NotesPill("파일 선택", onClick = { onDismiss(); onPickFile() }, modifier = Modifier.weight(1f))
                 if (launch != null) {
                     NotesPill(
-                        "Flexcil 열기",
+                        "원본 노트 앱 열기",
                         onClick = {
                             onDismiss()
                             runCatching { context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -135,7 +135,7 @@ internal fun shareDiagnostic(context: Context, file: File) {
     }
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "ScheduleWidget 노트 · Flexcil 가져오기 진단 정보")
+        putExtra(Intent.EXTRA_SUBJECT, "ScheduleWidget 노트 · .flex/.flx 가져오기 진단 정보")
         if (text != null) putExtra(Intent.EXTRA_TEXT, text)
         if (uri != null) {
             putExtra(Intent.EXTRA_STREAM, uri)

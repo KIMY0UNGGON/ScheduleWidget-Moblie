@@ -57,7 +57,7 @@ import java.util.Locale
 
 // ---- notebook card ----
 
-private val BADGES = mapOf("pdf" to "PDF", "pptx" to "PPT", "docx" to "Word", "image" to "사진", "blank" to "노트", "flexcil" to "Flexcil")
+private val BADGES = mapOf("pdf" to "PDF", "pptx" to "PPT", "docx" to "Word", "image" to "사진", "blank" to "노트", "flexcil" to ".flex/.flx")
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

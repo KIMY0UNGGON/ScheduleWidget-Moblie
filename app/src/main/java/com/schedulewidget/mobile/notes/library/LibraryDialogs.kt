@@ -78,7 +78,7 @@ internal fun AddSheet(onDismiss: () -> Unit, onNewNote: () -> Unit, onPickFiles:
             Text("추가", style = NotesTokens.type.h3, modifier = Modifier.padding(top = NotesSpace.xs, bottom = NotesSpace.md))
             AddRow(Icons.Outlined.EditNote, "새 노트", "무지·줄·모눈·점 속지에 바로 필기") { pick(onNewNote) }
             AddRow(Icons.Outlined.FileOpen, "파일 가져오기", "PDF·PPT·Word·사진, 여러 개도 한 번에") { pick(onPickFiles) }
-            AddRow(Icons.Outlined.Draw, "Flexcil에서 가져오기", "필기 포함 PDF나 .flex 백업 파일") { pick(onFlexcil) }
+            AddRow(Icons.Outlined.Draw, ".flex/.flx 노트 가져오기", "필기 포함 PDF나 .flex 백업·.flx 문서 파일") { pick(onFlexcil) }
             AddRow(Icons.Outlined.DriveFolderUpload, "폴더 통째로 가져오기", "폴더 안의 파일을 폴더 구조대로") { pick(onPickTree) }
         }
     }

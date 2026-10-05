@@ -22,6 +22,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- stt/ : speech-model downloads run as a dataSync foreground service (transcription uses SPECIAL_USE above). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- update/ : hands a user-downloaded update APK to the system installer (the user confirms there). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Lets the music-apps editor list installed media players (Spotify, YouTube Music, Melon, ...). -->
     <queries>
@@ -39,7 +41,7 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="audio/*" />
         </intent>
-        <!-- notes/ : "Flexcil 열기" in the Flexcil import guide. -->
+        <!-- notes/ : "open the backup app" button in the external note-backup import guide. -->
         <package android:name="com.flexcil.flexcilnote" />
     </queries>
 
@@ -65,7 +67,7 @@
         </activity>
 
         <!-- notes/ : "열기" / "공유" of a PDF, PPT or Word file from other apps imports it into 노트 (MainActivity).
-             Flexcil exports (.flex backup / .flx document) arrive as zip or octet-stream; NoteOpenWith checks the name. -->
+             External note-app backups (.flex backup / .flx document) arrive as zip or octet-stream; NoteOpenWith checks the name. -->
         <activity-alias
             android:name=".notes.OpenWithNotes"
             android:exported="true"

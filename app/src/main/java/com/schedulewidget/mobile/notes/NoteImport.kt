@@ -163,7 +163,7 @@ object NoteImport {
                         return@withContext
                     }
                     when (uris.size) {
-                        0 -> { _state.value = State.Failed("가져올 수 있는 파일이 없어요 (PDF, PPT, Word, Flexcil .flex/.flx)") }
+                        0 -> { _state.value = State.Failed("가져올 수 있는 파일이 없어요 (PDF, PPT, Word, .flex/.flx)") }
                         1 -> try {
                             val o = importOnce(app, uris[0], convert, folder)
                             _state.value = State.Idle
@@ -299,7 +299,7 @@ object NoteImport {
                 Outcome(listOf(create(app, pdf, title, "image", folder)), "사진을 가져왔어요")
             }
             FileKind.FLEXCIL -> flexcil(app, input, name, folder, work)
-            FileKind.UNKNOWN -> throw ImportError("지원하지 않는 파일이에요. PDF, PPT, Word, 사진, Flexcil(.flex/.flx) 파일을 가져올 수 있어요")
+            FileKind.UNKNOWN -> throw ImportError("지원하지 않는 파일이에요. PDF, PPT, Word, 사진, .flex/.flx 파일을 가져올 수 있어요")
             else -> office(app, input, kind, title, convert, folder, work)
         }
     }

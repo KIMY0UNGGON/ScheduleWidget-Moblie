@@ -204,6 +204,10 @@ fun SettingsScreen(onBack: () -> Unit, navigate: (Route) -> Unit) {
             LinkRow(Icons.Outlined.FileDownload, "PC에서 가져오기", "데스크톱 앱의 schedules.json을 불러옵니다") { confirmImport = true }
             LinkRow(Icons.Outlined.FileUpload, "내보내기", "schedules.json으로 저장합니다 (PC 앱에서 사용 가능)") { exportLauncher.launch("schedules.json") }
 
+            // Draws its own "앱 업데이트" section title (update/AppUpdateSettingsCard.kt).
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            com.schedulewidget.mobile.update.AppUpdateSettingsCard(Modifier.fillMaxWidth())
+
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SettingsResetRow { scope.launch { snackbar.showSnackbar("표시 설정을 기본값으로 되돌렸습니다") } }
         }

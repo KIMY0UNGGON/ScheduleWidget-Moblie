@@ -27,7 +27,7 @@ internal object NoteFlexcilImport {
     suspend fun restore(
         app: Context, input: File, name: String?, folder: String?, work: File, stage: (String) -> Unit,
     ): Result {
-        stage("Flexcil 원본 노트 복원 중")
+        stage(".flex/.flx 원본 노트 복원 중")
         val job = currentCoroutineContext().job
         val notes = ArrayList<NoteMeta>()
         var strokes = 0
@@ -53,7 +53,7 @@ internal object NoteFlexcilImport {
                 "가져오기를 취소했어요. 먼저 복원한 노트 ${notes.size}개는 저장했습니다. ${originalNotice()}", cancelled = true)
         } catch (e: FlexcilArchive.FlexcilError) {
             val diagnostic = diagnostic(app, e.report)
-            if (notes.isEmpty()) throw NoteImport.ImportError("Flexcil 노트를 복원하지 못했어요: ${e.message}", diagnostic)
+            if (notes.isEmpty()) throw NoteImport.ImportError(".flex/.flx 노트를 복원하지 못했어요: ${e.message}", diagnostic)
             return Result(notes, "노트 ${notes.size}개를 복원했어요", "일부 노트를 읽지 못했어요: ${e.message}", diagnostic)
         }
         if (notes.isEmpty()) throw NoteImport.ImportError(
@@ -121,9 +121,9 @@ internal object NoteFlexcilImport {
 
     private fun diagnostic(app: Context, report: String): File? = runCatching {
         val dir = File(app.cacheDir, "notes-share").apply { mkdirs() }
-        dir.listFiles { f -> f.name.startsWith("flexcil-diagnostic") }?.forEach { it.delete() }
-        File(dir, "flexcil-diagnostic-${System.currentTimeMillis()}.txt").apply {
-            writeText("Flexcil 원본 복원 진단 · 파일 이름과 크기만 포함\nandroid=${Build.VERSION.SDK_INT}\n\n$report")
+        dir.listFiles { f -> f.name.startsWith("flexcil-diagnostic") || f.name.startsWith("notes-import-diagnostic") }?.forEach { it.delete() }
+        File(dir, "notes-import-diagnostic-${System.currentTimeMillis()}.txt").apply {
+            writeText(".flex/.flx 원본 복원 진단 · 파일 이름과 크기만 포함\nandroid=${Build.VERSION.SDK_INT}\n\n$report")
         }
     }.getOrNull()
 }

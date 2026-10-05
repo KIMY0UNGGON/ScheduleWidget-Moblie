@@ -95,7 +95,7 @@ internal class FlexcilArchiveWalker(
                         try {
                             FlexcilArchive.extract(zip, e, nested, checkActive)
                             if (FlexcilArchive.isZip(nested)) {
-                                progress("Flexcil 파일 여는 중 · ${e.name.substringAfterLast('/')}")
+                                progress("백업 안 파일 여는 중 ·${e.name.substringAfterLast('/')}")
                                 walk(nested, ctx + e.name.split('/').filter { it.isNotEmpty() }, depth + 1)
                             }
                         } catch (error: Exception) {
@@ -164,7 +164,7 @@ internal class FlexcilArchiveWalker(
             ?: info?.str("name")?.trim()?.takeIf { it.isNotEmpty() }
             ?: docName?.takeIf { !FlexcilArchive.isUuid(it) }
             ?: outerName?.let { FlexcilArchive.stripExt(it) }?.takeIf { it.isNotBlank() }
-            ?: "Flexcil 노트"
+            ?: "가져온 노트"
         val folder = listedAs?.second?.takeIf { it.isNotEmpty() }?.joinToString("/") ?: FlexcilArchive.folderOf(segments.dropLast(1))
 
         val pdfPrefix = (root + "attachment/pdf/").lowercase()
@@ -172,7 +172,7 @@ internal class FlexcilArchiveWalker(
         val pdfByKey = pdfs.associateBy { it.name.substringAfterLast('/').substringBeforeLast('.').uppercase() }
 
         restoreSink?.let { restore ->
-            progress("Flexcil 노트 복원 중 · $title")
+            progress("노트 복원 중 · $title")
             val files = linkedMapOf<String, File>()
             try {
                 pdfByKey.forEach { (key, e) ->
@@ -245,7 +245,7 @@ internal class FlexcilArchiveWalker(
                 }
                 n++
                 val bookTitle = if (n == 1) title else "$title ($n)"
-                progress("Flexcil 노트 만드는 중 · $bookTitle")
+                progress("노트 만드는 중 · $bookTitle")
                 val pages = groups[key]
                 pages?.forEach { p -> checkActive(); strokes += p.strokes.size }
                 sink(Book(bookTitle, folder, pdf, pages))

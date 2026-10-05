@@ -7,4 +7,6 @@
     <cache-path name="notes_share" path="notes-share/" />
     <!-- notes/ : camera photo being taken to insert as a notebook page. -->
     <cache-path name="notes_camera" path="notes-camera/" />
+    <!-- update/ : downloaded update APK handed to the system package installer. -->
+    <cache-path name="app_updates" path="app-updates/" />
 </paths>

@@ -109,7 +109,7 @@ object Characters {
         !id.isNullOrEmpty() && id.length <= 64 && id.all { (it.isLetterOrDigit() && it.code < 128) || it == '-' || it == '_' }
 
     private fun load(context: Context): List<CharacterInfo> {
-        val preferredOrder = listOf("mochi-white", "mochi-black", "mochi-blue", "mochi-red", "codex")
+        val preferredOrder = listOf("mochi-white", "mochi-black", "mochi-blue", "mochi-red")
         val builtin = loadFrom(runCatching { context.assets.list("characters")?.toList() }.getOrNull().orEmpty(), imported = false) { id ->
             context.assets.open("characters/$id/pet.json").bufferedReader().use { it.readText() } to "characters/$id/"
         }.sortedWith(compareBy({ it.id !in preferredOrder }, { preferredOrder.indexOf(it.id) }, { it.name }))

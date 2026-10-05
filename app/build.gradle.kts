@@ -13,8 +13,9 @@ android {
         applicationId = "com.schedulewidget.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // versionName restarts at 0.0; versionCode must still go up so installed builds can upgrade in place.
+        versionCode = 2
+        versionName = "0.0"
         testInstrumentationRunner = "com.schedulewidget.mobile.AuditInstrumentation"
         // On-device speech recognition (sherpa-onnx) ships native code: phones/tablets (arm64) and the emulator (x86_64).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
@@ -41,7 +42,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        // update/ : Settings shows BuildConfig.VERSION_NAME.
+        buildConfig = true
+    }
 }
 
 dependencies {

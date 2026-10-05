@@ -218,7 +218,7 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
                             action = "새 노트", onAction = { addSheet = true },
                         )
                         else -> EmptyState(
-                            "아직 노트가 없어요", "PDF·PPT·Word·Flexcil 파일을 가져오거나 새 노트를 만들어 보세요.",
+                            "아직 노트가 없어요", "PDF·PPT·Word·.flex/.flx 파일을 가져오거나 새 노트를 만들어 보세요.",
                             action = "새 노트", onAction = { addSheet = true },
                         )
                     }

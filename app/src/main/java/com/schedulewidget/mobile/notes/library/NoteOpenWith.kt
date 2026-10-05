@@ -80,7 +80,7 @@ object NoteOpenWith {
         if (importable.isEmpty()) return true
         val uris = importable.filter { accepted(context, it, intent?.type) }
         if (uris.isEmpty()) {
-            Toast.makeText(context, "노트로 가져올 수 없는 파일이에요 (PDF, PPT, Word, Flexcil .flex/.flx)", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "노트로 가져올 수 없는 파일이에요 (PDF, PPT, Word, .flex/.flx)", Toast.LENGTH_LONG).show()
             return false
         }
         val settings = Repository.get(context).data.value.notes

@@ -14,7 +14,7 @@
     <instrumentation
         android:name="com.schedulewidget.mobile.FlexcilRestoreInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
-        android:label="Native Flexcil restore regression" />
+        android:label="Native note backup restore regression" />
     <instrumentation
         android:name="com.schedulewidget.mobile.EditorGestureInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
@@ -39,4 +39,8 @@
         android:name="com.schedulewidget.mobile.EditorKeyUiInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Real editor key route regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.AppUpdateInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="GitHub update and bundled pet regression" />
 </manifest>

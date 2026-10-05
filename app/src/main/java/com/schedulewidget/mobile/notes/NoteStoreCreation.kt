@@ -84,7 +84,7 @@ internal object NoteStoreCreation {
             throw IOException("원본 PDF 이름이 올바르지 않아요")
         }
         if (sources.values.any { !it.isFile }) throw IOException("원본 PDF를 읽을 수 없어요")
-        if (original != null && !original.isFile) throw IOException("원본 Flexcil 파일을 읽을 수 없어요")
+        if (original != null && !original.isFile) throw IOException("원본 .flx 파일을 읽을 수 없어요")
 
         val app = context.applicationContext
         val id = NoteStore.newId(app)
