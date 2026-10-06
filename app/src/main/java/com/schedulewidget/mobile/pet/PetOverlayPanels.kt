@@ -1,5 +1,7 @@
 package com.schedulewidget.mobile.pet
 
+import android.graphics.Rect
+import android.os.Build
 import android.view.WindowManager
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,8 +29,17 @@ internal class PetOverlayPanels(private val service: PetOverlayService) {
 
     private fun minWidth() = (200 * service.resources.displayMetrics.density).roundToInt()
 
-    private fun maxCalendarWidth() = (OVERLAY_CALENDAR_FULL_WIDTH_DP * service.resources.displayMetrics.density).roundToInt()
-        .coerceAtMost(service.resources.displayMetrics.widthPixels)
+    private fun maxCalendarWidth() = service.resources.displayMetrics.widthPixels
+
+    private fun moveCalendar(dx: Float, dy: Float) {
+        val panelView = view ?: return
+        val panelParams = params ?: return
+        if (kind != PetPanel.Calendar || !panelView.isAttachedToWindow) return
+        val screen = service.resources.displayMetrics
+        panelParams.x = (panelParams.x + dx.roundToInt()).coerceIn(0, (screen.widthPixels - panelView.width).coerceAtLeast(0))
+        panelParams.y = (panelParams.y + dy.roundToInt()).coerceIn(0, (screen.heightPixels - panelView.height).coerceAtLeast(0))
+        runCatching { service.windows.updateViewLayout(panelView, panelParams) }
+    }
 
     private fun maxCalendarHeight() = service.resources.displayMetrics.let {
         (it.heightPixels * 0.75f / it.density).roundToInt().coerceAtLeast(MIN_CAL_HEIGHT)
@@ -159,6 +170,7 @@ internal class PetOverlayPanels(private val service: PetOverlayService) {
                     dayHeight = calendarHeight.intValue,
                     onResize = { edges, dx, dy -> resizeCalendar(edges, dx, dy) },
                     onResizeEnd = ::saveCalendarSize,
+                    onMove = ::moveCalendar,
                 )
                 PetPanel.Music -> PetMusicPanel(
                     onClose = ::close,
@@ -175,6 +187,20 @@ internal class PetOverlayPanels(private val service: PetOverlayService) {
             if (!changedView.isAttachedToWindow || bottom - top <= 0) return@addOnLayoutChangeListener
             val screenHeight = service.resources.displayMetrics.heightPixels
             val height = bottom - top
+            if (panel == PetPanel.Calendar && Build.VERSION.SDK_INT >= 29) {
+                // Keep Android's edge-back gesture from cancelling the resize grips; at most 200dp per side.
+                val density = service.resources.displayMetrics.density
+                val corner = (34 * density).roundToInt()
+                val side = (16 * density).roundToInt()
+                val halfMiddle = minOf(height * 0.3f, 66 * density).roundToInt()
+                val width = changedView.width
+                changedView.systemGestureExclusionRects = listOf(
+                    Rect(0, 0, corner, corner), Rect(width - corner, 0, width, corner),
+                    Rect(0, height - corner, corner, height), Rect(width - corner, height - corner, width, height),
+                    Rect(0, height / 2 - halfMiddle, side, height / 2 + halfMiddle),
+                    Rect(width - side, height / 2 - halfMiddle, width, height / 2 + halfMiddle),
+                )
+            }
             val y = if (!placed) {
                 val below = petParams.y + pet.height + 8
                 val above = petParams.y - height - 8

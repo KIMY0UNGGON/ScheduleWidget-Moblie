@@ -18,12 +18,12 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.ExperimentalComposeUiApi
 import android.view.MotionEvent
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +43,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -71,6 +72,7 @@ import java.util.Locale
 const val OVERLAY_CALENDAR_FULL_WIDTH_DP = 7 * 104 + 6 * 6 + 2 * 8 + 2 * 10
 
 /** Compact 7-day agenda shown next to the floating pet on double-tap. */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun OverlayCalendar(
     onClose: () -> Unit,
@@ -81,6 +83,8 @@ fun OverlayCalendar(
     /** Drag on a corner or side grip, in raw screen px; the service resizes (and for left/top also moves) the window. */
     onResize: ((edges: ResizeEdges, dx: Float, dy: Float) -> Unit)? = null,
     onResizeEnd: () -> Unit = {},
+    /** Drag the date-range header to move the whole panel; deltas are raw screen pixels. */
+    onMove: ((dx: Float, dy: Float) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val data by remember { Repository.get(context) }.data.collectAsState()
@@ -97,36 +101,45 @@ fun OverlayCalendar(
     // Same paper-calendar card as the in-app board (ui/CalendarBoard.kt): 18dp corners, 2dp frame.
     val shape = RoundedCornerShape(18.dp)
 
-    Box {
+    BoxWithConstraints {
+    val dayWidth = ((maxWidth.value - 48f) / 7f).coerceAtLeast(12f)
+    val panelTextScale = ((dayWidth / 64f) * (dayHeight / 260f).coerceIn(0.9f, 1.2f)).coerceIn(0.52f, 1.35f)
     Column(
         Modifier.padding(10.dp).shadow(8.dp, shape).clip(shape).background(theme.paper)
             .border(2.dp, theme.frame, shape),
     ) {
-        Row(
+        Column(
             // Extra top padding keeps the header text clear of the binding rings that hang over the top edge.
             Modifier.fillMaxWidth().background(theme.top).padding(start = 14.dp, end = 4.dp, top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.weight(1f).heightIn(min = 48.dp).calendarMoveHandle(onMove),
+                contentAlignment = Alignment.CenterStart,
+            ) {
             Text(
                 "${today.monthValue}.${today.dayOfMonth} — ${days.last().monthValue}.${days.last().dayOfMonth}",
-                color = theme.topInk, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                color = theme.topInk, fontWeight = FontWeight.Bold,
+                fontSize = (15f * panelTextScale).coerceAtLeast(11f).sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            // Straight to the character settings (size, animation, floating on/off, Drive sync).
-            TextButton(onClick = { onOpenApp(Route.Pets) }) { Text("⚙ 펫", color = theme.topInk, fontSize = 13.sp) }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { onAdd(today) }) { Text("+ 일정", color = theme.topInk, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            TextButton(onClick = { onOpenApp(Route.Mini) }) { Text("앱 열기", color = theme.topInk, fontSize = 13.sp) }
+            }
+            TextButton(onClick = { onOpenApp(Route.Settings) }) { Text("설정", color = theme.topInk, fontSize = 12.sp) }
             TextButton(onClick = onClose) { Text("✕", color = theme.topInk, fontSize = 15.sp) }
         }
-        // The week runs sideways (today, tomorrow, …); swipe left/right for the rest of the 7 days.
-        // Text follows 설정 > 달력 글자 크기, like the in-app board.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { onAdd(today) }) { Text("+ 일정", color = theme.topInk, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = { onOpenApp(Route.Mini) }) { Text("앱 열기", color = theme.topInk, fontSize = 13.sp) }
+        }
+        }
+        // All seven dates share the available width; the user's font setting scales with the panel.
         CompositionLocalProvider(
-            LocalCalendarTextScale provides data.calendarTextFactor,
+            LocalCalendarTextScale provides data.calendarTextFactor * panelTextScale,
             LocalCalendarToday provides today,
         ) {
         Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             for (day in days) {
                 val holiday = KoreanHolidays.nameOf(day)
@@ -140,14 +153,14 @@ fun OverlayCalendar(
                     else -> theme.weekday
                 }
                 Column(
-                    Modifier.width(104.dp).height(dayHeight.dp).clip(RoundedCornerShape(10.dp))
+                    Modifier.weight(1f).height(dayHeight.dp).clip(RoundedCornerShape(10.dp))
                         .background(if (day == today) theme.today else theme.day)
                         .clickable { onAdd(day) }
-                        .padding(6.dp),
+                        .padding(horizontal = 2.dp, vertical = 6.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.Bottom) {
+                    Column {
                         Text("${day.dayOfMonth}", color = dayColor, fontWeight = FontWeight.Bold, fontSize = calSp(17f))
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.height(1.dp))
                         Text(day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN), color = dayColor, fontSize = calSp(11f),
                             modifier = Modifier.padding(bottom = 2.dp))
                     }
@@ -206,6 +219,25 @@ fun OverlayCalendar(
         ResizeGrip(ResizeEdges(right = true), null, onResize, onResizeEnd, Modifier.align(Alignment.CenterEnd).width(16.dp).fillMaxHeight(0.6f))
         ResizeGrip(ResizeEdges(bottom = true), null, onResize, onResizeEnd, Modifier.align(Alignment.BottomCenter).height(16.dp).fillMaxWidth(0.6f))
     }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun Modifier.calendarMoveHandle(onMove: ((Float, Float) -> Unit)?): Modifier {
+    if (onMove == null) return this
+    return composed {
+        var lastX by remember { mutableFloatStateOf(0f) }
+        var lastY by remember { mutableFloatStateOf(0f) }
+        pointerInteropFilter { event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { lastX = event.rawX; lastY = event.rawY }
+                MotionEvent.ACTION_MOVE -> {
+                    onMove(event.rawX - lastX, event.rawY - lastY)
+                    lastX = event.rawX; lastY = event.rawY
+                }
+            }
+            true
+        }
     }
 }
 
