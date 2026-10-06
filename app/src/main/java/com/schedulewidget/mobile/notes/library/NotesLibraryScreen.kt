@@ -38,9 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.schedulewidget.mobile.data.Repository
-import com.schedulewidget.mobile.notes.importer.FileKind
 import com.schedulewidget.mobile.notes.ink.PageInfo
-import com.schedulewidget.mobile.notes.library.FlexcilGuideDialog
 import com.schedulewidget.mobile.notes.library.ImportReportDialog
 import com.schedulewidget.mobile.notes.library.NoteFolders
 import com.schedulewidget.mobile.notes.library.NotesDialog
@@ -129,8 +127,9 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
         val convert = NoteImport.Convert.of(Repository.get(context).data.value.notes.convert)
         if (!NoteImport.startTree(context, tree, convert, folder)) scope.launch { snackbar.showSnackbar("이미 가져오는 중이에요") }
     }
-    val pickFiles = { runCatching { pick.launch(FileKind.PICKER_MIMES + "application/octet-stream") }; Unit }
-    var flexcilGuide by rememberSaveable { mutableStateOf(false) }
+    // .flex/.flx have no registered MIME on most phones (and providers label them differently), so show every file;
+    // NoteImport classifies by content and rejects what it can't read.
+    val pickFiles = { runCatching { pick.launch(arrayOf("*/*")) }; Unit }
     var report by remember { mutableStateOf<NoteImport.Done?>(null) }
     fun openImportResult(result: NoteImport.Done) {
         when {
@@ -298,7 +297,6 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
         onDismiss = { addSheet = false },
         onNewNote = { newNote = true },
         onPickFiles = pickFiles,
-        onFlexcil = { flexcilGuide = true },
         onPickTree = { runCatching { pickTree.launch(null) } },
     )
     (importState as? NoteImport.State.Failed)?.let { failed ->
@@ -313,11 +311,6 @@ private fun LibraryContent(onOpen: (String) -> Unit) {
             Text(failed.message, style = NotesTokens.type.body.copy(color = c.muted), modifier = Modifier.verticalScroll(rememberScrollState()))
         }
     }
-    if (flexcilGuide) FlexcilGuideDialog(
-        onDismiss = { flexcilGuide = false },
-        // Flexcil's files have no registered type on most phones, so show everything; the import checks the content.
-        onPickFile = { runCatching { pick.launch(arrayOf("*/*")) } },
-    )
     report?.let { d ->
         ImportReportDialog(
             d, onOpen = { openImportResult(d) }, onDismiss = { report = null },

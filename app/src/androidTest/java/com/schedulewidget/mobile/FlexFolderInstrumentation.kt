@@ -24,6 +24,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Base64
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -133,6 +134,37 @@ class FlexFolderInstrumentation : Instrumentation() {
                     "Standalone Done open=${alone.open} folder=${alone.importedFolder}/${alone.note.folder}"
                 }
                 results += "PASS: async backup Done -> importedFolder, open=false; standalone .flx opens directly"
+
+                // Bare, uncompressed PDF entries expose their PDF magic near the ZIP start. This uses the copy/
+                // file-classification route because the archive has no native document marker for the fast path.
+                val stored = storedZip("Math/one.pdf" to pdf(2), "English/two.pdf" to pdf(1))
+                check(String(stored.take(1024).toByteArray(), Charsets.ISO_8859_1).contains("%PDF-"))
+                val storedDone = startAndWait(input("Stored PDFs.flex", stored))
+                check(storedDone.importedFolder == "Stored PDFs" && !storedDone.open && storedDone.count == 2)
+                val storedNotes = NoteStore.list(scratch).filter { NoteFolders.isWithin(it.folder, "Stored PDFs") }
+                check(storedNotes.size == 2 && storedNotes.all { it.source == "flexcil" })
+                check(storedNotes.map { it.folder }.toSet() == setOf("Stored PDFs/Math", "Stored PDFs/English"))
+                check(storedNotes.map { it.pageCount }.sorted() == listOf(1, 2))
+                storedNotes.forEach { meta ->
+                    val note = checkNotNull(NoteStore.load(scratch, meta.id))
+                    note.pages.forEach { page -> check(pageCount(NoteStore.sourceFile(scratch, meta.id, page)) > page.pdf) }
+                }
+                results += "PASS: stored PDF headers inside .flex select backup/folder import and link both PDFs"
+
+                // Extensionless download (file Uri: no MIME, no .flex name) of a native backup whose first entry is a
+                // stored PDF: only the content can classify it, and it must still become a backup folder, not a PDF.
+                val bare = storedZip("flexcilbackup/Documents/Math/one.pdf" to pdf(2), "flexcilbackup/Documents/Art/two.pdf" to pdf(1))
+                check(String(bare.take(1024).toByteArray(), Charsets.ISO_8859_1).contains("%PDF-"))
+                val bareDone = startAndWait(input("Downloaded backup", bare))
+                check(bareDone.importedFolder == "Downloaded backup" && !bareDone.open && bareDone.count == 2) {
+                    "Extensionless Done folder=${bareDone.importedFolder} open=${bareDone.open} count=${bareDone.count}"
+                }
+                val bareNotes = NoteStore.list(scratch).filter { NoteFolders.isWithin(it.folder, "Downloaded backup") }
+                check(bareNotes.map { it.folder }.toSet() == setOf("Downloaded backup/Math", "Downloaded backup/Art")) {
+                    "Extensionless folders: ${bareNotes.map { it.folder }}"
+                }
+                check(bareNotes.all { it.source == "flexcil" } && bareNotes.map { it.pageCount }.sorted() == listOf(1, 2))
+                results += "PASS: extensionless native backup with a leading stored PDF imports as a folder, not a PDF"
             }
             val after = targetContext.getSharedPreferences("notes_library", Context.MODE_PRIVATE)
                 .getStringSet("folders", emptySet()).orEmpty().toSet()
@@ -203,6 +235,21 @@ class FlexFolderInstrumentation : Instrumentation() {
     private fun zip(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
         ZipOutputStream(output).use { archive -> entries.forEach { (name, bytes) ->
             archive.putNextEntry(ZipEntry(name)); archive.write(bytes); archive.closeEntry()
+        } }
+        output.toByteArray()
+    }
+
+    private fun storedZip(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
+        ZipOutputStream(output).use { archive -> entries.forEach { (name, bytes) ->
+            val entry = ZipEntry(name).apply {
+                method = ZipEntry.STORED
+                size = bytes.size.toLong()
+                compressedSize = size
+                crc = CRC32().apply { update(bytes) }.value
+            }
+            archive.putNextEntry(entry)
+            archive.write(bytes)
+            archive.closeEntry()
         } }
         output.toByteArray()
     }

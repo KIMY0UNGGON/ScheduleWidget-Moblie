@@ -79,7 +79,7 @@ enum class FileKind {
         fun detect(name: String?, mime: String?, head: ByteArray, zipHas: (String) -> Boolean): FileKind {
             val guess = byName(name, mime)
             val ascii = String(head, Charsets.ISO_8859_1)
-            if (ascii.startsWith("%PDF") || ascii.take(1024).contains("%PDF-")) return PDF
+            // A stored PDF inside a ZIP can expose %PDF- in the first KB. Check the outer container first.
             if (starts(head, 0x50, 0x4B, 0x03, 0x04)) {
                 return when {
                     zipHas("ppt/presentation.xml") -> PPTX
@@ -88,6 +88,7 @@ enum class FileKind {
                     else -> UNKNOWN
                 }
             }
+            if (ascii.startsWith("%PDF") || ascii.take(1024).contains("%PDF-")) return PDF
             if (starts(head, 0xD0, 0xCF, 0x11, 0xE0)) return if (guess == PPT || guess == DOC) guess else UNKNOWN
             if (starts(head, 0xFF, 0xD8, 0xFF) || starts(head, 0x89, 0x50, 0x4E, 0x47) || ascii.startsWith("GIF8") ||
                 (ascii.startsWith("RIFF") && ascii.startsWith("WEBP", 8)) || ascii.startsWith("BM") && guess == IMAGE ||

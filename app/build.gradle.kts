@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 36
         // versionName restarts at 0.0; versionCode must still go up so installed builds can upgrade in place.
-        versionCode = 3
+        versionCode = 4
         versionName = "0.0"
         testInstrumentationRunner = "com.schedulewidget.mobile.AuditInstrumentation"
         // On-device speech recognition (sherpa-onnx) ships native code: phones/tablets (arm64) and the emulator (x86_64).

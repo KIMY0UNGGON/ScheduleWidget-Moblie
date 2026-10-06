@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DriveFolderUpload
-import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Folder
@@ -66,7 +65,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun AddSheet(onDismiss: () -> Unit, onNewNote: () -> Unit, onPickFiles: () -> Unit, onFlexcil: () -> Unit, onPickTree: () -> Unit) {
+internal fun AddSheet(onDismiss: () -> Unit, onNewNote: () -> Unit, onPickFiles: () -> Unit, onPickTree: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     // Hide with the sheet's animation, then run the action (pickers open over the closed sheet).
@@ -77,8 +76,7 @@ internal fun AddSheet(onDismiss: () -> Unit, onNewNote: () -> Unit, onPickFiles:
         Column(Modifier.fillMaxWidth().padding(start = NotesSpace.lg, end = NotesSpace.lg, bottom = NotesSpace.lg)) {
             Text("추가", style = NotesTokens.type.h3, modifier = Modifier.padding(top = NotesSpace.xs, bottom = NotesSpace.md))
             AddRow(Icons.Outlined.EditNote, "새 노트", "무지·줄·모눈·점 속지에 바로 필기") { pick(onNewNote) }
-            AddRow(Icons.Outlined.FileOpen, "파일 가져오기", "PDF·PPT·Word·사진, 여러 개도 한 번에") { pick(onPickFiles) }
-            AddRow(Icons.Outlined.Draw, ".flex/.flx 노트 가져오기", "필기 포함 PDF나 .flex 백업·.flx 문서 파일") { pick(onFlexcil) }
+            AddRow(Icons.Outlined.FileOpen, "파일 가져오기", "PDF·PPT·Word·사진·.flex/.flx 백업, 여러 개도 한 번에") { pick(onPickFiles) }
             AddRow(Icons.Outlined.DriveFolderUpload, "폴더 통째로 가져오기", "폴더 안의 파일을 폴더 구조대로") { pick(onPickTree) }
         }
     }
@@ -94,7 +92,7 @@ private fun AddRow(icon: ImageVector, title: String, subtitle: String, onClick: 
         Spacer(Modifier.width(NotesSpace.md))
         Column(Modifier.weight(1f)) {
             Text(title, style = NotesTokens.type.body.copy(fontWeight = NotesTokens.type.title.fontWeight))
-            Text(subtitle, style = NotesTokens.type.bodySm.copy(color = NotesTokens.colors.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, style = NotesTokens.type.bodySm.copy(color = NotesTokens.colors.muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

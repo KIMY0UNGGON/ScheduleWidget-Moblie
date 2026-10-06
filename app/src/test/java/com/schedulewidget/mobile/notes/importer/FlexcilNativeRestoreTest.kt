@@ -176,6 +176,9 @@ class FlexcilNativeRestoreTest {
         val path = System.getenv("SCHEDULEWIDGET_FLEX_FIXTURE")
         assumeTrue("Optional real Flexcil backup", path != null)
         val file = File(path!!)
+        val head = file.inputStream().use { input -> ByteArray(1024).let { bytes -> bytes.copyOf(input.read(bytes)) } }
+        assertEquals("A backup's embedded PDF header must not select the PDF import path", FileKind.FLEXCIL,
+            FileKind.detect(file.name, "application/pdf", head) { false })
         var books = 0; var pages = 0; var blank = 0; var mixed = 0; var strokes = 0
         val work = tmp.newFolder()
         val result = FlexcilArchive.restore(file, file.name, work) { doc ->
