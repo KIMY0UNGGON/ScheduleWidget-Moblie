@@ -69,6 +69,7 @@ private val AnchorKey = longPreferencesKey("anchor_epoch_day")
 /** Bumped by [WidgetUpdater.refreshAll] so device-calendar events are re-read. */
 internal val TickKey = longPreferencesKey("refresh_tick")
 private val DeltaParam = ActionParameters.Key<Int>("delta")
+private val FixedDaysParam = ActionParameters.Key<Int>("fixed_days")
 
 private data class DayEntry(
     val title: String, val time: String?, val color: Color, val done: Boolean, val dDay: String? = null,
@@ -80,9 +81,10 @@ private data class DayEntry(
 
 private const val AGENDA_DAYS = 14L
 
-class CalendarWidget : GlanceAppWidget() {
+open class CalendarWidget(private val fixedDays: Int = 0) : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(
-        setOf(DpSize(120.dp, 110.dp), DpSize(250.dp, 110.dp), DpSize(250.dp, 200.dp), DpSize(320.dp, 280.dp))
+        if (fixedDays == 30) setOf(DpSize(250.dp, 250.dp), DpSize(320.dp, 320.dp), DpSize(480.dp, 400.dp))
+        else setOf(DpSize(120.dp, 110.dp), DpSize(250.dp, 110.dp), DpSize(250.dp, 200.dp), DpSize(320.dp, 280.dp))
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -103,9 +105,9 @@ class CalendarWidget : GlanceAppWidget() {
             }
             val data by calendarData.collectAsState(initialData)
             val today = LocalDate.now()
-            val count = data.miniDayCount.coerceIn(1, 7)
+            val count = calendarDayCount(fixedDays, data.miniDayCount)
             val anchor = prefs[AnchorKey]?.let(LocalDate::ofEpochDay) ?: today
-            val start = periodStart(anchor, count)
+            val start = if (fixedDays == 0) periodStart(anchor, count) else anchor
             // Schedules and the Google link are keys too: DeviceCalendar.events hides events that duplicate a schedule.
             val events by produceState(
                 emptyList<DeviceEvent>(), start, count, today, data.calendar, data.schedules, data.googleCalendar, prefs[TickKey],
@@ -120,10 +122,16 @@ class CalendarWidget : GlanceAppWidget() {
                     }.distinctBy { it.id }
                 }
             }
-            CalendarContent(data, events, today, start, count, anchor != today)
+            CalendarContent(data, events, today, start, count, anchor != today, fixedDays)
         }
     }
 }
+
+class SevenDayCalendarWidget : CalendarWidget(7)
+class ThirtyDayCalendarWidget : CalendarWidget(30)
+
+internal fun calendarDayCount(fixedDays: Int, configuredDays: Int): Int =
+    if (fixedDays == 7 || fixedDays == 30) fixedDays else configuredDays.coerceIn(1, 7)
 
 internal fun periodStart(anchor: LocalDate, count: Int): LocalDate =
     if (count == 7) anchor.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) else anchor
@@ -131,7 +139,8 @@ internal fun periodStart(anchor: LocalDate, count: Int): LocalDate =
 class ShiftPeriodAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val delta = parameters[DeltaParam] ?: 0
-        val count = Repository.get(context).data.value.miniDayCount.coerceIn(1, 7)
+        val fixedDays = parameters[FixedDaysParam] ?: 0
+        val count = calendarDayCount(fixedDays, Repository.get(context).data.value.miniDayCount)
         updateAppWidgetState(context, glanceId) { prefs ->
             if (delta == 0) prefs.remove(AnchorKey)
             else {
@@ -140,7 +149,11 @@ class ShiftPeriodAction : ActionCallback {
                 if (next == LocalDate.now().toEpochDay()) prefs.remove(AnchorKey) else prefs[AnchorKey] = next
             }
         }
-        CalendarWidget().update(context, glanceId)
+        when (fixedDays) {
+            7 -> SevenDayCalendarWidget()
+            30 -> ThirtyDayCalendarWidget()
+            else -> CalendarWidget()
+        }.update(context, glanceId)
     }
 }
 
@@ -199,7 +212,7 @@ private fun periodLabel(start: LocalDate, count: Int): String {
 
 @Composable
 private fun CalendarContent(
-    data: AppData, events: List<DeviceEvent>, today: LocalDate, start: LocalDate, count: Int, shifted: Boolean,
+    data: AppData, events: List<DeviceEvent>, today: LocalDate, start: LocalDate, count: Int, shifted: Boolean, fixedDays: Int,
 ) {
     val size = LocalSize.current
     val palette = WidgetPalette.of(data.miniTheme)
@@ -210,19 +223,42 @@ private fun CalendarContent(
     Column(
         GlanceModifier.fillMaxSize().background(palette.background).cornerRadius(18.dp).padding(8.dp)
     ) {
-        if (size.width < 200.dp) {
+        if (size.width < 200.dp && fixedDays == 0) {
             AgendaHeader(today, palette)
             DDayLine(dday, palette)
             Agenda(byDay, today, palette)
         } else {
-            Header(start, count, shifted, if (size.height < 200.dp) dday else null, palette)
+            Header(start, count, shifted, if (size.height < 200.dp) dday else null, palette, fixedDays)
             Spacer(GlanceModifier.height(4.dp))
             val maxItems = ((size.height.value - (if (size.height < 200.dp) 78 else 100)) / 20).toInt().coerceIn(1, 7)
-            Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
-                for (i in 0 until count) {
-                    val date = start.plusDays(i.toLong())
-                    DayColumn(date, date == today, byDay[date].orEmpty(), maxItems, count, palette, GlanceModifier.defaultWeight())
-                    if (i < count - 1) Spacer(GlanceModifier.width(3.dp))
+            if (count == 30) {
+                val rowCount = (count + 6) / 7
+                val cellItems = (((size.height.value - 78) / rowCount - 24) / 18).toInt().coerceIn(0, 3)
+                Column(GlanceModifier.fillMaxWidth().defaultWeight()) {
+                    for (row in 0 until rowCount) {
+                        Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
+                            for (column in 0 until 7) {
+                                val index = row * 7 + column
+                                if (index < count) {
+                                    val date = start.plusDays(index.toLong())
+                                    Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(end = if (column < 6) 3.dp else 0.dp)) {
+                                        DayColumn(date, date == today, byDay[date].orEmpty(), cellItems, 7, palette, GlanceModifier.fillMaxSize())
+                                    }
+                                } else Spacer(GlanceModifier.defaultWeight())
+                            }
+                        }
+                        if (row < rowCount - 1) Spacer(GlanceModifier.height(3.dp))
+                    }
+                }
+            } else {
+                Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
+                    for (i in 0 until count) {
+                        val date = start.plusDays(i.toLong())
+                        // Glance rows accept at most ten children; keep spacing inside each of the seven cells.
+                        Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(end = if (i < count - 1) 3.dp else 0.dp)) {
+                            DayColumn(date, date == today, byDay[date].orEmpty(), maxItems, count, palette, GlanceModifier.fillMaxSize())
+                        }
+                    }
                 }
             }
             if (size.height >= 200.dp) {
@@ -244,10 +280,10 @@ private fun HeaderButton(label: String, palette: WidgetPalette, action: androidx
 }
 
 @Composable
-private fun Header(start: LocalDate, count: Int, shifted: Boolean, dday: Pair<String, String>?, palette: WidgetPalette) {
+private fun Header(start: LocalDate, count: Int, shifted: Boolean, dday: Pair<String, String>?, palette: WidgetPalette, fixedDays: Int) {
     val context = LocalContext.current
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        HeaderButton("‹", palette, actionRunCallback<ShiftPeriodAction>(actionParametersOf(DeltaParam to -1)))
+        HeaderButton("‹", palette, actionRunCallback<ShiftPeriodAction>(actionParametersOf(DeltaParam to -1, FixedDaysParam to fixedDays)))
         Text(
             periodLabel(start, count),
             modifier = GlanceModifier.defaultWeight().padding(horizontal = 6.dp)
@@ -264,14 +300,14 @@ private fun Header(start: LocalDate, count: Int, shifted: Boolean, dday: Pair<St
             )
         }
         if (shifted) {
-            HeaderButton("오늘", palette, actionRunCallback<ShiftPeriodAction>(actionParametersOf(DeltaParam to 0)))
+            HeaderButton("오늘", palette, actionRunCallback<ShiftPeriodAction>(actionParametersOf(DeltaParam to 0, FixedDaysParam to fixedDays)))
             Spacer(GlanceModifier.width(4.dp))
         }
         HeaderButton("+", palette, actionStartActivity(QuickAddActivity.intent(context, start.coerceAtLeast(LocalDate.now()))))
         Spacer(GlanceModifier.width(4.dp))
         HeaderButton("앱", palette, actionStartActivity(routeIntent(context, Route.Mini)))
         Spacer(GlanceModifier.width(4.dp))
-        HeaderButton("›", palette, actionRunCallback<ShiftPeriodAction>(actionParametersOf(DeltaParam to 1)))
+        HeaderButton("›", palette, actionRunCallback<ShiftPeriodAction>(actionParametersOf(DeltaParam to 1, FixedDaysParam to fixedDays)))
     }
 }
 
@@ -296,14 +332,14 @@ private fun DayColumn(
             dateText,
             style = TextStyle(
                 color = (if (isToday) palette.accent else palette.dayColor(date)).provider(),
-                fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                fontSize = if (compact) 10.sp else 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
             ),
             maxLines = 1,
         )
         if (holiday != null && !compact) {
             Text(holiday, style = TextStyle(color = palette.sunday.provider(), fontSize = 9.sp), maxLines = 1)
         }
-        val shown = if (entries.size > maxItems) entries.take(maxItems - 1) else entries
+        val shown = if (entries.size > maxItems) entries.take((maxItems - 1).coerceAtLeast(0)) else entries
         shown.forEach { EntryBlock(it, compact, palette) }
         if (entries.size > shown.size) {
             Text(
@@ -322,11 +358,12 @@ private fun EntryBlock(entry: DayEntry, compact: Boolean, palette: WidgetPalette
     val fg = if (entry.done) palette.subText else contentColorFor(entry.color)
     val base = if (entry.time != null && !compact) "${entry.time} ${entry.title}" else entry.title
     val label = entry.dDay?.let { if (compact) "$it $base" else "$base · $it" } ?: base
-    Spacer(GlanceModifier.height(2.dp))
     // Our schedules open edit / 완료 / 삭제; the day around it still adds a new one.
     val tap = entry.scheduleId?.let { GlanceModifier.clickable(actionStartActivity(QuickAddActivity.editIntent(context, it))) } ?: GlanceModifier
+    Box(GlanceModifier.fillMaxWidth().padding(top = 2.dp)) {
     Box(GlanceModifier.fillMaxWidth().cornerRadius(5.dp).background(bg).then(tap).padding(horizontal = 3.dp, vertical = 1.dp)) {
         Text(label, style = TextStyle(color = fg.provider(), fontSize = 10.sp), maxLines = 1)
+    }
     }
 }
 

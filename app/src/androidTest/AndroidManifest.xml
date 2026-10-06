@@ -51,4 +51,8 @@
         android:name="com.schedulewidget.mobile.ShapeAssistInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Pen shape correction and freehand regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.WidgetCalendarInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Seven and thirty day home widget rendering" />
 </manifest>

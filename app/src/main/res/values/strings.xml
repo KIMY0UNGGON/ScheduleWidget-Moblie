@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">일정 위젯</string>
     <string name="widget_calendar">미니 달력</string>
+    <string name="widget_calendar_seven">7일 달력</string>
+    <string name="widget_calendar_thirty">30일 달력</string>
+    <string name="widget_calendar_seven_desc">오늘부터 7일의 일정과 D-day</string>
+    <string name="widget_calendar_thirty_desc">오늘부터 30일의 일정과 D-day</string>
     <string name="widget_music">음악 막대</string>
     <string name="widget_calendar_desc">일정과 D-day가 보이는 주간 달력</string>
     <string name="widget_music_desc">위젯 플레이리스트와 음악 앱 조작</string>

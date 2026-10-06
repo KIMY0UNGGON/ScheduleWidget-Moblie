@@ -55,7 +55,7 @@ object WidgetUpdater {
                 val data = repository.data.value
                 val nextCalendar = calendarKey(data)
                 val nextPlaylist = playlistKey(data)
-                if (nextCalendar != calendar) { update(app, CalendarWidget()); calendar = nextCalendar }
+                if (nextCalendar != calendar) { calendarWidgets().forEach { update(app, it) }; calendar = nextCalendar }
                 if (data.miniTheme != theme) { update(app, MusicWidget()); theme = data.miniTheme }
                 if (nextPlaylist != playlist) { update(app, PlaylistWidget()); playlist = nextPlaylist }
             }
@@ -102,13 +102,17 @@ object WidgetUpdater {
     internal suspend fun refreshNow(context: Context) {
         val manager = GlanceAppWidgetManager(context)
         val tick = System.currentTimeMillis()
-        manager.getGlanceIds(CalendarWidget::class.java).forEach { id ->
-            runCatching { updateAppWidgetState(context, id) { it[TickKey] = tick } }
+        calendarWidgets().forEach { widget ->
+            manager.getGlanceIds(widget.javaClass).forEach { id ->
+                runCatching { updateAppWidgetState(context, id) { it[TickKey] = tick } }
+            }
+            update(context, widget)
         }
-        update(context, CalendarWidget())
         update(context, MusicWidget())
         update(context, PlaylistWidget())
     }
+
+    private fun calendarWidgets() = listOf(CalendarWidget(), SevenDayCalendarWidget(), ThirtyDayCalendarWidget())
 
     private suspend fun update(context: Context, widget: GlanceAppWidget) {
         val manager = GlanceAppWidgetManager(context)

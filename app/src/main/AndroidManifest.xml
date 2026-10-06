@@ -41,8 +41,6 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="audio/*" />
         </intent>
-        <!-- notes/ : "open the backup app" button in the external note-backup import guide. -->
-        <package android:name="com.flexcil.flexcilnote" />
     </queries>
 
     <application
@@ -249,6 +247,24 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/music_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.SevenDayCalendarWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_calendar_seven">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/seven_day_calendar_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.ThirtyDayCalendarWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_calendar_thirty">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/thirty_day_calendar_widget_info" />
         </receiver>
         <receiver
             android:name=".widget.PlaylistWidgetReceiver"

@@ -8,6 +8,14 @@ class CalendarWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget get() = CalendarWidget()
 }
 
+class SevenDayCalendarWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget get() = SevenDayCalendarWidget()
+}
+
+class ThirtyDayCalendarWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget get() = ThirtyDayCalendarWidget()
+}
+
 class MusicWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget get() = MusicWidget()
 }
