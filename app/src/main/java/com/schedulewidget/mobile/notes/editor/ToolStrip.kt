@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -136,7 +137,10 @@ internal fun ToolStrip(st: EditorState, customPen: SnapshotStateList<Int>, custo
 private fun ToolOptions(st: EditorState, customPen: SnapshotStateList<Int>) {
     if (st.linkMode) return
     when (st.displayTool) {
-        EditorTool.PEN -> Hint("펜을 한 번 더 누르면 설정")
+        EditorTool.PEN -> {
+            ShapeToggle(st)
+            Hint(if (st.shapeCorrection) "선 끝에서 잠깐 멈추면 직선·원·곡선으로" else "펜을 한 번 더 누르면 설정")
+        }
         EditorTool.HIGHLIGHTER -> Hint("멈춰 누르고 있으면 직선")
         EditorTool.ERASER -> {
             NotesSegmented(
@@ -263,6 +267,28 @@ private fun AddDot(label: String, onClick: () -> Unit) {
             .combinedClickable(onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(Icons.Filled.Add, label, tint = c.ink, modifier = Modifier.size(16.dp)) }
+}
+
+/** 도형 보정 on/off (NotesSettings.shapeCorrection), saved at once. */
+@Composable
+private fun ShapeToggle(st: EditorState) {
+    val c = NotesTokens.colors
+    val context = LocalContext.current
+    val on = st.shapeCorrection
+    Box(
+        Modifier
+            .clip(NotesShapes.full)
+            .background(if (on) c.ink else c.canvasSoft)
+            .minimumInteractiveComponentSize()
+            .toggleable(value = on, role = Role.Switch) { v ->
+                st.shapeCorrection = v
+                Repository.get(context).update { it.copy(notes = it.notes.copy(shapeCorrection = v)) }
+            }
+            .padding(horizontal = NotesSpace.sm, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(if (on) "도형 보정 켬" else "도형 보정 끔", style = NotesTokens.type.label.copy(color = if (on) c.onInk else c.ink), maxLines = 1)
+    }
 }
 
 @Composable

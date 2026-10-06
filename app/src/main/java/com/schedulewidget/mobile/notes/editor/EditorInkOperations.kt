@@ -4,6 +4,7 @@ import android.graphics.RectF
 import com.schedulewidget.mobile.notes.NoteStore
 import com.schedulewidget.mobile.notes.ink.InkGeometry
 import com.schedulewidget.mobile.notes.ink.PageInk
+import com.schedulewidget.mobile.notes.ink.ShapeCorrection
 import com.schedulewidget.mobile.notes.ink.Stroke
 import com.schedulewidget.mobile.notes.ink.TextBox
 import com.schedulewidget.mobile.notes.ink.Tool
@@ -37,10 +38,12 @@ internal fun EditorState.beginInkFeature(sx: Float, sy: Float, pressure: Float, 
                 liveWidth = pen.width
                 liveN = 0
                 liveSnapped = false
+                liveShaped = false
+                liveRaw = null
                 val rs = Recorder.state.value
                 if (rs.isRecording && rs.id != null) { liveRec = rs.id; liveRecMs = rs.elapsedMs() } else { liveRec = null; liveRecMs = 0 }
                 addLivePoint(sx, sy, pressure)
-                if (liveTool == Tool.HIGHLIGHTER) armSnap(sx, sy)
+                if (holdSnaps()) armSnap(sx, sy)
             }
             EditorTool.ERASER -> {
                 gesture = InkGesture.ERASE
@@ -88,9 +91,22 @@ internal fun EditorState.moveInkFeature(sx: Float, sy: Float, pressure: Float) {
                     val i = livePage
                     livePts[3] = round2(toPageX(i, sx)); livePts[4] = round2(toPageY(i, sy))
                     liveVersion++
+                } else if (liveShaped) {
+                    // Shape-corrected pen stroke: hand jitter keeps the shape; moving on brings back the stroke as
+                    // written and writing continues from it (hold again to re-correct).
+                    val raw = liveRaw
+                    if (raw != null && InkGeometry.dist(sx, sy, snapAnchorX, snapAnchorY) > 6f * density) {
+                        if (raw.size > livePts.size) livePts = raw.copyOf(raw.size * 2) else raw.copyInto(livePts)
+                        liveN = raw.size / 3
+                        liveShaped = false
+                        liveRaw = null
+                        addLivePoint(sx, sy, pressure)
+                        liveVersion++
+                        armSnap(sx, sy)
+                    }
                 } else {
                     addLivePoint(sx, sy, pressure)
-                    if (liveTool == Tool.HIGHLIGHTER && InkGeometry.dist(sx, sy, snapAnchorX, snapAnchorY) > 6f * density) armSnap(sx, sy)
+                    if (holdSnaps() && InkGeometry.dist(sx, sy, snapAnchorX, snapAnchorY) > 6f * density) armSnap(sx, sy)
                 }
             }
             InkGesture.ERASE -> {
@@ -147,6 +163,7 @@ internal fun EditorState.cancelInkFeature() {
             eraserX = Float.NaN; eraserY = Float.NaN
         }
         livePage = -1; liveN = 0; lassoN = 0; lassoPage = -1
+        liveSnapped = false; liveShaped = false; liveRaw = null
         dragDx = 0f; dragDy = 0f; dragTextId = -1; dragTextUid = null
         gesture = InkGesture.NONE
         liveVersion++
@@ -191,17 +208,29 @@ private fun EditorState.addLivePoint(sx: Float, sy: Float, pressure: Float) {
         liveVersion++
     }
 
+/** Holding the pen still snaps the stroke: always for the highlighter, for other pens when 도형 보정 is on. */
+private fun EditorState.holdSnaps(): Boolean = liveTool == Tool.HIGHLIGHTER || shapeCorrection
+
 private fun EditorState.armSnap(sx: Float, sy: Float) {
         snapAnchorX = sx; snapAnchorY = sy
         snapJob?.cancel()
         snapJob = scope.launch {
             delay(EditorState.SNAP_HOLD_MS)
-            if (gesture == InkGesture.DRAW && liveTool == Tool.HIGHLIGHTER && liveN >= 2 && !liveSnapped) {
+            if (gesture != InkGesture.DRAW || livePage < 0 || liveN < 2 || liveSnapped || liveShaped) return@launch
+            if (liveTool == Tool.HIGHLIGHTER) {
                 val ex = livePts[(liveN - 1) * 3]; val ey = livePts[(liveN - 1) * 3 + 1]
                 if (InkGeometry.dist(ex, ey, livePts[0], livePts[1]) * pxPerPt(livePage) < 12f * density) return@launch
                 livePts[3] = ex; livePts[4] = ey; livePts[5] = 1f
                 liveN = 2
                 liveSnapped = true
+                liveVersion++
+            } else if (shapeCorrection) {
+                val minSize = EditorState.SHAPE_MIN_DP * density / pxPerPt(livePage)
+                val shaped = ShapeCorrection.correct(livePts, liveN, minSize) ?: return@launch
+                liveRaw = livePts.copyOf(liveN * 3)
+                livePts = shaped.copyOf(shaped.size * 2)
+                liveN = shaped.size / 3
+                liveShaped = true
                 liveVersion++
             }
         }
@@ -219,6 +248,8 @@ private fun EditorState.commitLive() {
         commitInk(uid, cur.copy(strokes = cur.strokes + s))
         livePage = -1
         liveN = 0
+        liveShaped = false
+        liveRaw = null
         liveVersion++
     }
 

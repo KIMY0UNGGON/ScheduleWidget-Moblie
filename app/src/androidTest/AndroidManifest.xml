@@ -47,4 +47,8 @@
         android:name="com.schedulewidget.mobile.FlexFolderInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Backup folder and PDF connection regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.ShapeAssistInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Pen shape correction and freehand regression" />
 </manifest>

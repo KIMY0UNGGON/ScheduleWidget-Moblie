@@ -16,6 +16,9 @@ data class NotesSettings(
     @SerialName("Pens") val pens: List<PenPreset> = emptyList(),
     // PenPreset.id of the slot last used.
     @SerialName("SelectedPen") val selectedPen: String = "",
+    // 도형 보정: a writing-pen stroke held still at its end becomes a straight line, ellipse or smooth curve.
+    // Strokes lifted normally are never changed. Missing in older settings = on.
+    @SerialName("ShapeCorrection") val shapeCorrection: Boolean = true,
 )
 
 /** One pen slot of the notes editor (like Flexcil's pen case): its kind, colour and width. */

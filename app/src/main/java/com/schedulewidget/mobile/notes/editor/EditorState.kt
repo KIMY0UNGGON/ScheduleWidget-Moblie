@@ -105,6 +105,7 @@ class EditorState(
     /** Makes slot [id] the active pen and switches to its tool (leaves link mode, drops a lasso selection). */
     fun selectPen(id: String) {
         val p = pens.firstOrNull { it.id == id } ?: return
+        snapJob?.cancel()
         penSelectionRevision++
         inputToolOverride = null
         if (id != penId) previousPenId = penId
@@ -116,6 +117,7 @@ class EditorState(
     }
 
     fun selectTool(next: EditorTool) {
+        snapJob?.cancel()
         penSelectionRevision++
         inputToolOverride = null
         tool = next
@@ -170,6 +172,8 @@ class EditorState(
     val textColor: Int get() = textColorChoice ?: penColor
 
     var eraserPartial by mutableStateOf(false)
+    /** NotesSettings.shapeCorrection: a writing-pen stroke held still at its end becomes a line, ellipse or smooth curve. */
+    var shapeCorrection by mutableStateOf(storedNotes.shapeCorrection)
     /** 녹음 연동: taps play the recording linked to the tapped stroke instead of writing. */
     var linkMode by mutableStateOf(false)
     /** NotesSettings.fingerDraws. */
@@ -267,7 +271,11 @@ class EditorState(
         internal set
     internal var liveRec: String? = null
     internal var liveRecMs = 0L
+    /** Straight highlighter line: livePts holds exactly start and end. */
     internal var liveSnapped = false
+    /** Pen stroke replaced by its corrected shape (any point count); [liveRaw] keeps the stroke as written. */
+    internal var liveShaped = false
+    internal var liveRaw: FloatArray? = null
     internal var snapJob: Job? = null
     internal var snapAnchorX = 0f
     internal var snapAnchorY = 0f
@@ -391,6 +399,8 @@ class EditorState(
         const val ERASER_RADIUS_DP = 10f
         const val LINK_HIT_DP = 14f
         const val SNAP_HOLD_MS = 550L
+        /** Smallest stroke (bounding-box diagonal, screen dp) that hold-to-shape corrects: letters and dots stay. */
+        const val SHAPE_MIN_DP = 32f
         const val AUTOSAVE_MS = 1000L
         const val MAX_UNDO = 200
 
