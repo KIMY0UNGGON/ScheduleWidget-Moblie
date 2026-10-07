@@ -227,7 +227,7 @@ PDF나 노트를 연 뒤 `⋮ → 노트 녹음`에서 연결된 녹음을 확�
 앱 데이터 삭제·앱 제거 전에는 필요한 내용을 내보내세요. 이미 내보낸 파일과 구글에 동기화된 데이터는 해당 저장 위치에서도 별도로 관리해야 합니다.
 
 **[개인정보처리방침](PRIVACY.md)** · 앱 안 `설정 → 개인정보` · [구글 계정 권한 관리](https://myaccount.google.com/connections)
-사용자 지원·개인정보 문의: **[ddd84860@gmail.com](mailto:ddd84860@gmail.com)**
+사용자 지원-개인정보 문의: **[ddd84860@gmail.com](mailto:ddd84860@gmail.com)**
 
 <details>
 <summary>관리자용 문서·검증 기록</summary>
