@@ -78,7 +78,9 @@ object NoteStore {
         original: File?,
         createdAt: Long? = null,
         updatedAt: Long? = null,
-    ): NoteMeta = NoteStoreCreation.restored(context, title, folder, pages, sources, inks, original, createdAt, updatedAt)
+        checkActive: () -> Unit = {},
+        reserveOutput: (Long) -> Unit = {},
+    ): NoteMeta = NoteStoreCreation.restored(context, title, folder, pages, sources, inks, original, createdAt, updatedAt, checkActive, reserveOutput)
 
     fun rename(context: Context, id: String, title: String) {
         if (update(context, id) { it.copy(title = title, updatedAt = System.currentTimeMillis()) } != null) bump()

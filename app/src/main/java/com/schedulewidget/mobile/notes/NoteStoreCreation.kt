@@ -2,6 +2,7 @@ package com.schedulewidget.mobile.notes
 
 import android.content.Context
 import com.schedulewidget.mobile.notes.editor.PageSources
+import com.schedulewidget.mobile.notes.ink.InkJson
 import com.schedulewidget.mobile.notes.ink.PageInfo
 import com.schedulewidget.mobile.notes.ink.PageInk
 import com.schedulewidget.mobile.notes.ink.StoredNote
@@ -71,7 +72,10 @@ internal object NoteStoreCreation {
         original: File?,
         createdAt: Long? = null,
         updatedAt: Long? = null,
+        checkActive: () -> Unit = {},
+        reserveOutput: (Long) -> Unit = {},
     ): NoteMeta = withContext(Dispatchers.IO) {
+        checkActive()
         if (pages.isEmpty()) throw IOException("노트 페이지가 없어요")
         val pageUids = pages.mapTo(HashSet()) { it.uid }
         if (pageUids.size != pages.size || !pageUids.containsAll(inks.keys) ||
@@ -90,23 +94,38 @@ internal object NoteStoreCreation {
         val id = NoteStore.newId(app)
         val noteDir = NoteStore.dir(app, id)
         var created = false
+        fun copySource(source: File, target: File, limit: Long = NoteImportFiles.MAX_IMPORT_BYTES) {
+            checkActive()
+            val length = source.length()
+            if (length !in 1L..limit) throw IOException("원본 파일 크기가 올바르지 않아요")
+            source.inputStream().use { input ->
+                FileOutputStream(target).use { output ->
+                    if (!NoteImportFiles.copyLimited(input, output, length, checkActive) || target.length() != length) {
+                        throw IOException("원본 파일이 바뀌었어요")
+                    }
+                    output.fd.sync()
+                }
+            }
+        }
         try {
             NoteStore.writeMutex.withLock {
+                checkActive()
                 if (noteDir.exists() || !noteDir.mkdirs()) throw IOException("노트 저장 공간을 만들 수 없어요")
                 created = true
                 sources.forEach { (name, source) ->
-                    val target = File(noteDir, name)
-                    source.inputStream().use { input ->
-                        FileOutputStream(target).use { output -> input.copyTo(output); output.fd.sync() }
-                    }
+                    copySource(source, File(noteDir, name))
                 }
                 original?.let { source ->
-                    FileOutputStream(File(noteDir, "original.flx")).use { output ->
-                        source.inputStream().use { input -> input.copyTo(output) }
-                        output.fd.sync()
+                    copySource(source, File(noteDir, "original.flx"), NoteImportFiles.MAX_FLEX_IMPORT_BYTES)
+                }
+                inks.forEach { (uid, ink) ->
+                    checkActive()
+                    if (!ink.isEmpty) {
+                        // ponytail: encode twice to reuse atomic writers; pass encoded bytes if import CPU becomes a bottleneck.
+                        reserveOutput(InkJson.encodeInk(ink).toByteArray().size.toLong())
+                        NoteStore.saveInk(app, id, uid, ink)
                     }
                 }
-                inks.forEach { (uid, ink) -> if (!ink.isEmpty) NoteStore.saveInk(app, id, uid, ink) }
                 val now = System.currentTimeMillis()
                 val savedCreatedAt = createdAt?.takeIf { it > 0 } ?: now
                 val savedUpdatedAt = updatedAt?.takeIf { it >= savedCreatedAt } ?: maxOf(now, savedCreatedAt)
@@ -119,6 +138,8 @@ internal object NoteStoreCreation {
                     folder = folder,
                     pages = pages,
                 )
+                checkActive()
+                reserveOutput(InkJson.encodeNote(note).toByteArray().size.toLong())
                 NoteStore.writeMeta(app, note)
                 NoteStore.bump()
                 NoteStore.requestThumbnail(app, id)

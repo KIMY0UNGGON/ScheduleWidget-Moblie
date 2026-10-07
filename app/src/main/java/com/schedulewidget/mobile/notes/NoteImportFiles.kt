@@ -23,6 +23,7 @@ import kotlin.math.roundToInt
 internal object NoteImportFiles {
     // Matches FlexcilArchive's existing 1 GiB per-entry ceiling; seekable backups avoid a second cache copy.
     const val MAX_IMPORT_BYTES = 1L shl 30
+    const val MAX_FLEX_IMPORT_BYTES = 4L shl 30
 
     /** Copies by actual bytes read; false means the next chunk would exceed [limit]. */
     internal fun copyLimited(input: InputStream, output: OutputStream, limit: Long, checkActive: () -> Unit = {}): Boolean {

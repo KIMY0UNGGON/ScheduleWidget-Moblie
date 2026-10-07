@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-07",
+  "versionName": "0.1.1",
+  "versionCode": 6,
+  "package": "com.schedulewidget.mobile",
+  "unitTests": {
+    "tests": 222,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "androidApi": 35,
+  "nativeChecks": {
+    "flex_original_audio": {
+      "passed": 11,
+      "failed": 0
+    },
+    "existing_note_recordings": {
+      "passed": 4,
+      "failed": 0
+    },
+    "notebook_storage": {
+      "passed": 1,
+      "failed": 0
+    },
+    "public_update": {
+      "passed": 8,
+      "failed": 0
+    },
+    "release_upgrade": {
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 111
+  },
+  "builds": [
+    "debug",
+    "debugAndroidTest",
+    "release"
+  ],
+  "release": {
+    "bytes": 91536785,
+    "sha256": "2a8315b739ae8a3f47ee6742cce81bb8fa915133fdb848c8421284c5d51b5f7a",
+    "sameSignerAsPreviousRelease": true,
+    "debuggable": false,
+    "inPlaceUpgradePreservedData": true
+  },
+  "externalFixture": {
+    "embeddedInRepositoryOrApk": false,
+    "modified": false,
+    "notes": 45,
+    "pages": 1626,
+    "retainedValidPdfs": 47,
+    "strokes": 6867,
+    "timedStrokes": 6807,
+    "audioMembers": 47,
+    "restoredValidRecordings": 46,
+    "recordingNoteLinks": 51,
+    "linkedNotes": 32,
+    "unmatchedTimingReferencesSkipped": 315,
+    "malformedOriginalAudioSkipped": 1,
+    "malformedAudioReason": "MP4 moov missing; independently rejected by Android MediaExtractor and FFmpeg"
+  },
+  "adversarialChecks": [
+    "exact document/page/stroke IDs only; no filename guessing",
+    "one original recording shared across several notes",
+    "atomic original-audio storage and legacy metadata compatibility",
+    "invalid media, missing references, cancellation and fatal rollback",
+    "completed notes and needed audio survive partial cancellation",
+    "strict link-write failure preserves audio and warns",
+    "bounded entry bytes, aggregate expansion/output, file attempts, pages and decoded ink"
+  ],
+  "limits": {
+    "backupInputBytes": 4294967296,
+    "entryBytes": 1073741824,
+    "expandedBytes": 8589934592,
+    "restoredSourceAndInkBytes": 8589934592,
+    "recordingAttempts": 512,
+    "documentAttempts": 512,
+    "nestedArchiveAttempts": 1024,
+    "totalPages": 50000,
+    "pdfSourcesPerDocument": 512,
+    "strokesPerDocument": 100000,
+    "pointsPerDocument": 1000000,
+    "retainedTimingKeys": 25000
+  },
+  "notExecuted": [
+    "live microphone recording",
+    "real speech-model transcription of private recordings"
+  ]
+}

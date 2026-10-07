@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
@@ -196,6 +197,7 @@ class NoteRecordingsInstrumentation : Instrumentation() {
     }
 
     private fun nodes(): List<AccessibilityNodeInfo> {
+        if (Build.VERSION.SDK_INT >= 34) uiAutomation.clearCache()
         val out = mutableListOf<AccessibilityNodeInfo>()
         fun walk(node: AccessibilityNodeInfo) {
             out += node

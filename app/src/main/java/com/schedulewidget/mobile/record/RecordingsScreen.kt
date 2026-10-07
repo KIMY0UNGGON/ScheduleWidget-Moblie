@@ -65,7 +65,7 @@ fun RecordingsScreen(
         value = withContext(Dispatchers.IO) {
             val all = Recordings.list(context, skipId = rec.id)
             if (noteId == null) all else all.filter {
-                recordingBelongsToNote(it.id, it.meta.noteId, noteId, inkRecordingIds)
+                recordingBelongsToNote(it.id, it.meta.noteId, noteId, inkRecordingIds, it.meta.noteIds)
             }
         }
     }

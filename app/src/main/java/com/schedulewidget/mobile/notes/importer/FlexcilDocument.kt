@@ -14,6 +14,8 @@ class FlexcilDocument(
     val original: File? = null,
     val createdAt: Long? = null,
     val updatedAt: Long? = null,
+    /** Original Flexcil `info.key`, used to join recording metadata without relying on a title or path. */
+    val sourceKey: String? = null,
 ) {
     class Page(
         val key: String?, val pdfKey: String?, val pdfIndex: Int, val rotation: Int,

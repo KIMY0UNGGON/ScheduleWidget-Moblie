@@ -3,6 +3,7 @@ package com.schedulewidget.mobile.notes
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.CancellationException
 import com.schedulewidget.mobile.notes.importer.FileKind
 import com.schedulewidget.mobile.notes.render.checkPdfPageCount
@@ -45,6 +46,21 @@ class NoteImportLimitsTest {
             }
         }
         assertEquals(0, output.size())
+    }
+
+    @Test fun largeBackupStreamsUseLongByteCountsWithoutAllocatingTheBackup() {
+        fun stream() = object : InputStream() {
+            var remaining = (3L shl 30) + 17
+            override fun read(): Int = if (remaining-- > 0) 0 else -1
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (remaining == 0L) return -1
+                val count = minOf(remaining, length.toLong()).toInt()
+                remaining -= count
+                return count
+            }
+        }
+        assertTrue(NoteImportFiles.copyLimited(stream(), OutputStream.nullOutputStream(), NoteImportFiles.MAX_FLEX_IMPORT_BYTES))
+        assertFalse(NoteImportFiles.copyLimited(stream(), OutputStream.nullOutputStream(), NoteImportFiles.MAX_IMPORT_BYTES))
     }
 
     @Test fun pdfPageCountIsCheckedBeforePageSizesAreAllocated() {

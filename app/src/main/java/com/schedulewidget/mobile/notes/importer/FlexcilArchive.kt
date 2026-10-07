@@ -46,6 +46,9 @@ object FlexcilArchive {
         val inkLost: Int,
         /** Entry listing (names and sizes only, no content) and a summary, for "진단 정보 공유". */
         val report: String,
+        val recordingsImported: Int = 0,
+        val audioFailures: Int = 0,
+        val unmatchedAudioRefs: Int = 0,
     ) {
         internal var failedDocs: Int = 0
         internal var passwordFailures: Int = 0
@@ -55,6 +58,26 @@ object FlexcilArchive {
     internal const val MAX_DEPTH = 4
     private const val MAX_ENTRY = 1L shl 30
     internal const val MAX_JSON = 16L shl 20
+    internal const val MAX_TOTAL_EXPANDED = 8L shl 30
+    internal const val MAX_RECORDING_ATTEMPTS = 512
+    internal const val MAX_DOCUMENT_ATTEMPTS = 512
+    internal const val MAX_NESTED_ARCHIVE_ATTEMPTS = 1024
+    internal const val MAX_TOTAL_PAGES = 50_000
+    internal const val MAX_PDFS_PER_DOCUMENT = 512
+    internal const val MAX_DOCUMENT_STROKES = 100_000
+    internal const val MAX_DOCUMENT_STROKE_POINTS = 1_000_000
+
+    internal class ExpandedBudget {
+        private var used = 0L
+        fun add(count: Int) = add(count.toLong())
+        fun add(count: Long) {
+            if (count < 0 || count > MAX_TOTAL_EXPANDED - used) throw ExpandedLimitExceeded()
+            used += count
+        }
+    }
+
+    internal open class ResourceLimitExceeded(message: String) : IOException(message)
+    internal class ExpandedLimitExceeded : ResourceLimitExceeded("백업에서 풀어낸 데이터가 너무 커요")
 
     internal val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -102,9 +125,11 @@ object FlexcilArchive {
         } catch (e: Exception) {
             if (e is java.util.concurrent.CancellationException) throw e
             walker.reportLine("error\t${e.javaClass.simpleName}")
+            walker.finishAudioRefs()
             walker.summary()
             throw FlexcilError(e.message ?: e.javaClass.simpleName, walker.report.toString(), e)
         }
+        walker.finishAudioRefs()
         walker.summary()
         return Result(walker.books, walker.flexcil || isFlexcilName(name), walker.strokes, walker.inkLost, walker.report.toString()).also {
             it.failedDocs = walker.failedDocs
@@ -115,30 +140,34 @@ object FlexcilArchive {
 
     /** Restores each original notebook once, keeping mixed PDF sources and blank pages in their original order. */
     fun restore(file: File, name: String?, work: File, progress: (String) -> Unit = {}, sink: (FlexcilDocument) -> Unit): Result =
-        restoreInternal(file, name, work, progress, {}, sink)
+        restoreInternal(file, name, work, progress, {}, null, sink)
 
     /** Same restore with cooperative cancellation checks during archive reads and extraction. */
     internal fun restoreCancellable(
         file: File, name: String?, work: File, progress: (String) -> Unit, checkActive: () -> Unit,
+        recordingSink: ((FlexcilRecording) -> String)? = null,
         sink: (FlexcilDocument) -> Unit,
-    ): Result = restoreInternal(file, name, work, progress, checkActive, sink)
+    ): Result = restoreInternal(file, name, work, progress, checkActive, recordingSink, sink)
 
     private fun restoreInternal(
         file: File, name: String?, work: File, progress: (String) -> Unit, checkActive: () -> Unit,
-        sink: (FlexcilDocument) -> Unit,
+        recordingSink: ((FlexcilRecording) -> String)?, sink: (FlexcilDocument) -> Unit,
     ): Result {
-        val walker = FlexcilArchiveWalker(work, name, progress, {}, sink, checkActive)
+        val walker = FlexcilArchiveWalker(work, name, progress, {}, sink, checkActive, recordingSink)
         walker.reportLine("file\t${name ?: "?"}\t${file.length()}")
         try {
             walker.walk(file, emptyList(), 0)
         } catch (e: Exception) {
             if (e is java.util.concurrent.CancellationException) throw e
             walker.reportLine("error\t${e.javaClass.simpleName}")
+            walker.finishAudioRefs()
             walker.summary()
             throw FlexcilError(e.message ?: e.javaClass.simpleName, walker.report.toString(), e)
         }
+        walker.finishAudioRefs()
         walker.summary()
-        return Result(walker.books, walker.flexcil || isFlexcilName(name), walker.strokes, walker.inkLost, walker.report.toString()).also {
+        return Result(walker.books, walker.flexcil || isFlexcilName(name), walker.strokes, walker.inkLost, walker.report.toString(),
+            walker.recordingsImported, walker.audioFailures, walker.unmatchedAudioRefs).also {
             it.failedDocs = walker.failedDocs
             it.passwordFailures = walker.passwordFailures
             it.imagePagesLost = walker.imagePagesLost
@@ -188,22 +217,27 @@ object FlexcilArchive {
         s.read(h) == 4 && h[0] == 0x50.toByte() && h[1] == 0x4B.toByte() && h[2] == 0x03.toByte() && h[3] == 0x04.toByte()
     }
 
-    internal fun extract(zip: Zip, e: Zip.Entry, out: File) = extract(zip, e, out) {}
+    internal fun extract(zip: Zip, e: Zip.Entry, out: File) = extract(zip, e, out, {})
 
-    internal fun extract(zip: Zip, e: Zip.Entry, out: File, checkActive: () -> Unit) {
+    internal fun extract(zip: Zip, e: Zip.Entry, out: File, checkActive: () -> Unit, budget: ExpandedBudget? = null) {
         if (e.size > MAX_ENTRY) throw IOException("항목이 너무 커요: ${e.name}")
-        zip.open(e).use { input -> out.outputStream().use { copyLimited(input, it, MAX_ENTRY, e.name, checkActive) } }
+        zip.open(e).use { input -> out.outputStream().use { copyLimited(input, it, MAX_ENTRY, e.name, checkActive, budget) } }
     }
 
-    private fun copyLimited(input: InputStream, out: java.io.OutputStream, limit: Long, name: String, checkActive: () -> Unit = {}) {
+    private fun copyLimited(
+        input: InputStream, out: java.io.OutputStream, limit: Long, name: String,
+        checkActive: () -> Unit = {}, budget: ExpandedBudget? = null,
+    ) {
         val buf = ByteArray(64 * 1024)
         var total = 0L
         while (true) {
             checkActive()
             val n = input.read(buf)
+            checkActive()
             if (n < 0) break
             total += n
             if (total > limit) throw IOException("항목이 너무 커요: $name")
+            budget?.add(n)
             out.write(buf, 0, n)
         }
     }
@@ -211,7 +245,9 @@ object FlexcilArchive {
     /** Flexcil's .itemInfo / documents.list: 8-byte header, then zlib or raw deflate (or plain JSON). */
     internal fun inflateWithHeader(bytes: ByteArray): String? = inflateWithHeader(bytes) {}
 
-    internal fun inflateWithHeader(bytes: ByteArray, checkActive: () -> Unit): String? {
+    internal fun inflateWithHeader(bytes: ByteArray, checkActive: () -> Unit): String? = inflateWithHeader(bytes, checkActive, null)
+
+    internal fun inflateWithHeader(bytes: ByteArray, checkActive: () -> Unit, budget: ExpandedBudget?): String? {
         if (bytes.size.toLong() > MAX_JSON) return null
         checkActive()
         val plain = String(bytes, Charsets.UTF_8).trimStart()
@@ -227,12 +263,14 @@ object FlexcilArchive {
                     checkActive()
                     val n = inf.inflate(buf)
                     if (n == 0) break
+                    checkActive()
+                    budget?.add(n)
                     if (out.size().toLong() + n > MAX_JSON) return null
                     out.write(buf, 0, n)
                 }
                 if (inf.finished() && out.size() > 0) return out.toString("UTF-8")
             } catch (e: Exception) {
-                if (e is java.util.concurrent.CancellationException) throw e
+                if (e is java.util.concurrent.CancellationException || e is ResourceLimitExceeded) throw e
                 // try the other wrapping
             } finally {
                 inf.end()
@@ -253,8 +291,11 @@ object FlexcilArchive {
             return readBytes(e, limit) {}
         }
         fun readBytes(e: Entry, limit: Long, checkActive: () -> Unit): ByteArray {
+            return readBytes(e, limit, checkActive, null)
+        }
+        fun readBytes(e: Entry, limit: Long, checkActive: () -> Unit, budget: ExpandedBudget?): ByteArray {
             val out = ByteArrayOutputStream()
-            open(e).use { copyLimited(it, out, limit, e.name, checkActive) }
+            open(e).use { copyLimited(it, out, limit, e.name, checkActive, budget) }
             return out.toByteArray()
         }
     }

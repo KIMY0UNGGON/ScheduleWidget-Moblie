@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Keep the code increasing so installed builds can upgrade in place.
-        versionCode = 5
-        versionName = "0.1"
+        versionCode = 6
+        versionName = "0.1.1"
         testInstrumentationRunner = "com.schedulewidget.mobile.AuditInstrumentation"
         // On-device speech recognition (sherpa-onnx) ships native code: phones/tablets (arm64) and the emulator (x86_64).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }

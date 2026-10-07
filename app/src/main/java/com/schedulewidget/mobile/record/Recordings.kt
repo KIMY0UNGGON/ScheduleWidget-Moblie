@@ -2,9 +2,12 @@ package com.schedulewidget.mobile.record
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
+import android.media.MediaFormat
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.schedulewidget.mobile.notes.NoteStore
 import com.schedulewidget.mobile.stt.Transcriber
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +23,7 @@ import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 /** Sidecar "<name>.json" next to each "<name>.m4a". [id] is the file name without extension (also the transcript key). */
 @Serializable
@@ -32,6 +36,8 @@ data class RecordingMeta(
     val file: String,
     /** Notebook opened when this recording started; null for ordinary recordings. */
     val noteId: String? = null,
+    /** Flexcil backup notebooks linked to an imported recording; old sidecars default to no extra links. */
+    val noteIds: List<String> = emptyList(),
 )
 
 data class RecordingItem(val meta: RecordingMeta, val audio: File, val sizeBytes: Long) {
@@ -43,7 +49,7 @@ internal fun recordingMetaFile(directory: File, id: String): File? =
 
 internal fun RecordingMeta.matchesAudio(audio: File): Boolean =
     isSafeRecordingId(id) && id == audio.nameWithoutExtension && file == audio.name &&
-        (noteId == null || isSafeRecordingId(noteId))
+        (noteId == null || isSafeRecordingId(noteId)) && noteIds.all(::isSafeRecordingId)
 
 private fun isSafeRecordingId(id: String): Boolean =
     id.isNotBlank() && id != "." && id != ".." && id.none { it == '/' || it == '\\' || it == ':' || it == '\u0000' }
@@ -52,6 +58,9 @@ private fun isSafeRecordingId(id: String): Boolean =
 object Recordings {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private const val MAX_META_BYTES = 64 * 1024L
+    private const val MAX_IMPORTED_AUDIO_BYTES = 1_073_741_824L
+    private const val IMPORT_FREE_RESERVE_BYTES = 50L * 1024 * 1024
+    private const val MAX_IMPORTED_TITLE_CHARS = 180
     private val _changes = MutableStateFlow(0)
     /** Bumped after every add / rename / delete so lists reload. */
     val changes: StateFlow<Int> = _changes
@@ -83,22 +92,168 @@ object Recordings {
 
     private fun metaFile(audio: File) = File(audio.parentFile, audio.nameWithoutExtension + ".json")
 
+    private fun writeMetaAtomicChecked(directory: File, meta: RecordingMeta, replaceExisting: Boolean = true) {
+        val target = recordingMetaFile(directory, meta.id)?.toPath() ?: throw IOException("녹음 정보가 올바르지 않아요")
+        val audio = File(directory, meta.file)
+        if (meta.file != audio.name || !audio.extension.equals("m4a", ignoreCase = true) || !meta.matchesAudio(audio)) {
+            throw IOException("녹음 정보가 올바르지 않아요")
+        }
+        if (Files.isSymbolicLink(target)) throw IOException("녹음 정보 저장 경로가 올바르지 않아요")
+        if (!replaceExisting && Files.exists(target, LinkOption.NOFOLLOW_LINKS)) throw IOException("녹음 정보가 이미 있어요")
+
+        val bytes = json.encodeToString(RecordingMeta.serializer(), meta).toByteArray(Charsets.UTF_8)
+        if (bytes.size.toLong() !in 1L..MAX_META_BYTES) throw IOException("녹음 정보가 너무 커요")
+        val tmp = Files.createTempFile(directory.toPath(), "${target.fileName}.", ".tmp")
+        try {
+            FileOutputStream(tmp.toFile()).use { out ->
+                out.write(bytes)
+                out.fd.sync()
+            }
+            if (Files.isSymbolicLink(target)) throw IOException("녹음 정보 저장 경로가 올바르지 않아요")
+            if (replaceExisting) {
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } else {
+                if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) throw IOException("녹음 정보가 이미 있어요")
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
+            }
+        } finally {
+            runCatching { Files.deleteIfExists(tmp) }
+        }
+    }
+
+    private fun newImportedId(directory: File): String {
+        repeat(8) {
+            val id = "flex_${UUID.randomUUID()}"
+            val audio = File(directory, "$id.m4a").toPath()
+            val sidecar = checkNotNull(recordingMetaFile(directory, id)).toPath()
+            if (!Files.exists(audio, LinkOption.NOFOLLOW_LINKS) && !Files.exists(sidecar, LinkOption.NOFOLLOW_LINKS)) return id
+        }
+        throw IOException("새 녹음 이름을 만들지 못했어요")
+    }
+
+    private fun requireAudioContainer(audio: File) {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(audio.absolutePath)
+            val hasAudio = (0 until extractor.trackCount).any { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            }
+            if (!hasAudio) throw IOException("지원하는 오디오 트랙이 없어요")
+        } finally {
+            extractor.release()
+        }
+    }
+
+    private fun ensureNotRecording(recordingId: String) {
+        val state = Recorder.state.value
+        if (state.isRecording && state.id == recordingId) throw IOException("녹음 중에는 노트를 연결할 수 없어요")
+    }
+
     @Synchronized
     fun save(context: Context, meta: RecordingMeta) {
         val directory = runCatching { dir(context) }.getOrNull() ?: return
-        val f = recordingMetaFile(directory, meta.id) ?: return
-        runCatching {
-            val tmp = Files.createTempFile(directory.toPath(), "${f.name}.", ".tmp")
-            try {
-                FileOutputStream(tmp.toFile()).use { out ->
-                    out.write(json.encodeToString(RecordingMeta.serializer(), meta).toByteArray(Charsets.UTF_8))
-                    out.fd.sync()
-                }
-                Files.move(tmp, f.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            } finally {
-                Files.deleteIfExists(tmp)
-            }
+        runCatching { writeMetaAtomicChecked(directory, meta) }
+    }
+
+    /** Copies one already-extracted Flexcil audio file byte-for-byte into app-owned storage. */
+    @Synchronized
+    internal fun importAudio(
+        context: Context,
+        audio: File,
+        title: String,
+        createdAt: Long,
+        durationMs: Long,
+        checkActive: () -> Unit = {},
+    ): RecordingItem {
+        val source = audio.toPath()
+        if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(source)) {
+            throw IOException("가져온 녹음 파일을 읽을 수 없어요")
         }
+        val length = Files.size(source)
+        if (length !in 1L..MAX_IMPORTED_AUDIO_BYTES) throw IOException("녹음 파일 크기가 올바르지 않아요")
+
+        val directory = dir(context)
+        if (directory.usableSpace < length + IMPORT_FREE_RESERVE_BYTES) throw IOException("저장 공간이 부족해요")
+        val id = newImportedId(directory)
+        val audioTarget = File(directory, "$id.m4a")
+        val sidecar = recordingMetaFile(directory, id) ?: throw IOException("녹음 정보를 저장할 수 없어요")
+        val audioTemp = Files.createTempFile(directory.toPath(), "$id.", ".tmp")
+        var installedAudio = false
+        var installedMeta = false
+        try {
+            Files.newInputStream(source, LinkOption.NOFOLLOW_LINKS).use { input ->
+                FileOutputStream(audioTemp.toFile()).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        checkActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        if (copied > MAX_IMPORTED_AUDIO_BYTES || copied > length) throw IOException("녹음 파일이 바뀌었어요")
+                        output.write(buffer, 0, count)
+                    }
+                    if (copied != length) throw IOException("녹음 파일이 바뀌었어요")
+                    output.fd.sync()
+                }
+            }
+            checkActive()
+            requireAudioContainer(audioTemp.toFile())
+            checkActive()
+            if (Files.exists(audioTarget.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+                Files.exists(sidecar.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                throw IOException("같은 이름의 녹음이 이미 있어요")
+            }
+
+            val safeTitle = title.filterNot { Character.isISOControl(it) }.trim()
+                .take(MAX_IMPORTED_TITLE_CHARS).ifBlank { "Flexcil 녹음" }
+            val meta = RecordingMeta(
+                id = id, title = safeTitle, createdAt = createdAt, durationMs = durationMs.coerceAtLeast(0),
+                file = audioTarget.name,
+            )
+            checkActive()
+            writeMetaAtomicChecked(directory, meta, replaceExisting = false)
+            installedMeta = true
+            checkActive()
+            Files.move(audioTemp, audioTarget.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            installedAudio = true
+            notifyChanged()
+            return RecordingItem(meta, audioTarget, length)
+        } catch (e: Throwable) {
+            if (installedMeta) runCatching { Files.deleteIfExists(sidecar.toPath()) }
+            if (installedAudio) runCatching { Files.deleteIfExists(audioTarget.toPath()) }
+            throw e
+        } finally {
+            runCatching { Files.deleteIfExists(audioTemp) }
+        }
+    }
+
+    /** Adds backup-level links without replacing the imported recording's title or timing metadata. */
+    @Synchronized
+    internal fun setNoteLinks(
+        context: Context, recordingId: String, noteIds: Collection<String>,
+        /** Live note IDs checked once by the bounded backup restore; ordinary calls check the store below. */
+        restoredNoteIds: Set<String>? = null,
+    ): RecordingItem {
+        if (!isSafeRecordingId(recordingId)) throw IOException("녹음 정보를 찾을 수 없어요")
+        val directory = dir(context)
+        val audio = File(directory, "$recordingId.m4a")
+        if (!Files.isRegularFile(audio.toPath(), LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(audio.toPath())) {
+            throw IOException("녹음 파일을 찾을 수 없어요")
+        }
+        ensureNotRecording(recordingId)
+        val current = readMeta(audio) ?: throw IOException("녹음 정보를 읽을 수 없어요")
+        val links = noteIds.toList().distinct()
+        if (links.any { !isSafeRecordingId(it) }) throw IOException("노트 연결 정보가 올바르지 않아요")
+        for (noteId in links) {
+            val exists = if (restoredNoteIds == null) NoteStore.get(context, noteId) != null else noteId in restoredNoteIds
+            if (!exists) throw IOException("연결할 노트를 찾을 수 없어요")
+        }
+        ensureNotRecording(recordingId)
+        val updated = current.copy(noteIds = links)
+        writeMetaAtomicChecked(directory, updated)
+        notifyChanged()
+        return RecordingItem(updated, audio, audio.length())
     }
 
     private fun readMeta(audio: File): RecordingMeta? {
@@ -151,9 +306,12 @@ object Recordings {
         }
     }.getOrDefault(0L)
 
+    @Synchronized
     fun rename(context: Context, item: RecordingItem, title: String) {
-        save(context, item.meta.copy(title = title.trim().ifEmpty { item.meta.title }))
-        notifyChanged()
+        val directory = runCatching { dir(context) }.getOrNull() ?: return
+        val current = readMeta(item.audio) ?: item.meta
+        val updated = current.copy(title = title.trim().ifEmpty { current.title })
+        if (runCatching { writeMetaAtomicChecked(directory, updated) }.isSuccess) notifyChanged()
     }
 
     fun delete(context: Context, item: RecordingItem) {

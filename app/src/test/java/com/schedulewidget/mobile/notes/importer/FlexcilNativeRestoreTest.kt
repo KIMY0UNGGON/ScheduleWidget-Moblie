@@ -180,21 +180,49 @@ class FlexcilNativeRestoreTest {
         assertEquals("A backup's embedded PDF header must not select the PDF import path", FileKind.FLEXCIL,
             FileKind.detect(file.name, "application/pdf", head) { false })
         var books = 0; var pages = 0; var blank = 0; var mixed = 0; var strokes = 0
+        var recordings = 0; var documentLinks = 0; var linkedStrokes = 0; var timedStrokes = 0
+        val durations = HashMap<String, Long>()
         val work = tmp.newFolder()
-        val result = FlexcilArchive.restore(file, file.name, work) { doc ->
-            books++
-            val restored = doc.pages!!
-            pages += restored.size
-            blank += restored.count { it.pdfKey == null }
-            if (doc.pdfs.size > 1) mixed++
-            strokes += restored.sumOf { it.strokes.size }
-            assertNotNull(doc.original)
-        }
+        val result = FlexcilArchive.restoreCancellable(file, file.name, work, {}, {}, recordingSink = { recording ->
+            recordings++
+            documentLinks += recording.documentKeys.size
+            val id = "test-recording-$recordings"
+            durations[id] = recording.durationMs
+            assertTrue(recording.audio.isFile)
+            id
+        }) { doc ->
+                books++
+                val restored = doc.pages!!
+                pages += restored.size
+                blank += restored.count { it.pdfKey == null }
+                if (doc.pdfs.size > 1) mixed++
+                strokes += restored.sumOf { page ->
+                    page.strokes.forEach { stroke ->
+                        stroke.recordingId?.let { id ->
+                            val duration = durations[id]
+                            assertNotNull(duration)
+                            val offset = stroke.recordingOffsetMs
+                            assertNotNull(offset)
+                            assertTrue(offset!! in 0L..duration!!)
+                            linkedStrokes++
+                            timedStrokes++
+                        }
+                    }
+                    page.strokes.size
+                }
+                assertNotNull(doc.original)
+            }
         assertEquals(45, books)
         assertEquals(1626, pages)
         assertEquals(3, blank)
         assertEquals(2, mixed)
         assertEquals(6867, strokes)
+        assertEquals(47, recordings)
+        assertEquals(52, documentLinks)
+        assertEquals(6807, linkedStrokes)
+        assertEquals(linkedStrokes, timedStrokes)
+        assertEquals(315, result.unmatchedAudioRefs)
+        assertEquals(0, result.audioFailures)
         assertEquals(0, result.inkLost)
         assertTrue(work.listFiles()!!.isEmpty())
     }

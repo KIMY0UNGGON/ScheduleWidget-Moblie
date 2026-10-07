@@ -32,18 +32,29 @@ import kotlin.math.sin
  */
 object FlexcilInk {
     /** A stroke in normalized page units: [pts] = x, y, width triples (width NaN = unknown). */
-    class NormStroke(val color: Int, val highlighter: Boolean, val pts: FloatArray) {
+    class NormStroke(
+        val color: Int, val highlighter: Boolean, val pts: FloatArray,
+        val key: String? = null, val recordingId: String? = null, val recordingOffsetMs: Long? = null,
+    ) {
         val count: Int get() = pts.size / 3
     }
+
+    internal data class RecordingLink(val id: String, val offsetMs: Long)
 
     class Parsed(val strokes: List<NormStroke>, val unreadable: Int)
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** Decodes a "points" value into dx, dy, width triples; null when the layout is not one we know. */
-    fun decodePoints(base64: String): FloatArray? {
+    fun decodePoints(base64: String): FloatArray? = decodePoints(base64, Int.MAX_VALUE)
+
+    private fun decodePoints(base64: String, maxPoints: Int): FloatArray? {
+        val normalized = base64.trim().replace("\\u003d", "=")
+        val maxBytes = 8L + maxPoints.toLong() * 12L
+        val maxBase64Chars = ((maxBytes + 2) / 3) * 4
+        if (normalized.length.toLong() > maxBase64Chars) throw FlexcilArchive.ResourceLimitExceeded("필기 데이터가 너무 많아요")
         val bytes = try {
-            Base64.getDecoder().decode(base64.trim().replace("\\u003d", "="))
+            Base64.getDecoder().decode(normalized)
         } catch (e: IllegalArgumentException) {
             return null
         }
@@ -55,6 +66,7 @@ object FlexcilInk {
             else -> return null
         }
         val n = (bytes.size - offset) / 12
+        if (n > maxPoints) throw FlexcilArchive.ResourceLimitExceeded("필기 데이터가 너무 많아요")
         val out = FloatArray(n * 3)
         for (i in 0 until n) {
             val o = offset + i * 12
@@ -68,28 +80,42 @@ object FlexcilInk {
     /** Parses a .drawings file. Entries we cannot place on the page count as [Parsed.unreadable]. */
     fun parseDrawings(text: String): Parsed = parseDrawings(text) {}
 
-    internal fun parseDrawings(text: String, checkActive: () -> Unit): Parsed {
+    internal fun parseDrawings(text: String, checkActive: () -> Unit): Parsed = parseDrawings(text, checkActive) { null }
+
+    internal fun parseDrawings(text: String, checkActive: () -> Unit, linkForStroke: (String) -> RecordingLink?): Parsed =
+        parseDrawings(text, checkActive, linkForStroke, Int.MAX_VALUE, Int.MAX_VALUE)
+
+    internal fun parseDrawings(
+        text: String, checkActive: () -> Unit, linkForStroke: (String) -> RecordingLink?,
+        maxStrokes: Int, maxPoints: Int,
+    ): Parsed {
         if (!hasSafeJsonStructure(text)) return Parsed(emptyList(), 1)
         val root = runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonArray ?: return Parsed(emptyList(), 1)
         val strokes = ArrayList<NormStroke>()
         var bad = 0
+        var points = 0
         for (el in root) {
             checkActive()
             val o = el as? JsonObject ?: continue
             val type = o.num("type")
             if (type != null && type.toInt() !in listOf(1, 2)) { bad++; continue }
-            val s = parseStroke(o)
-            if (s == null) bad++ else strokes += s
+            if (strokes.size >= maxStrokes) throw FlexcilArchive.ResourceLimitExceeded("필기가 너무 많아요")
+            val s = parseStroke(o, maxPoints - points)
+            if (s == null) bad++ else {
+                points += s.count
+                val link = s.key?.let(linkForStroke)
+                strokes += if (link == null) s else NormStroke(s.color, s.highlighter, s.pts, s.key, link.id, link.offsetMs)
+            }
         }
         return Parsed(strokes, bad)
     }
 
-    private fun parseStroke(o: JsonObject): NormStroke? {
+    private fun parseStroke(o: JsonObject, maxPoints: Int): NormStroke? {
         val raw = (o["points"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
         val start = o["start"] as? JsonObject ?: return null
         val sx = start.num("x")?.toFloat() ?: return null
         val sy = start.num("y")?.toFloat() ?: return null
-        val d = decodePoints(raw) ?: return null
+        val d = decodePoints(raw, maxPoints) ?: return null
         if (d.isEmpty()) return null
         val scale = o["scale"] as? JsonObject
         val kx = scale?.num("x")?.toFloat()?.takeIf { it.isFinite() && it > 0f } ?: 1f
@@ -116,7 +142,8 @@ object FlexcilInk {
         // Flexcil's highlighter stores a translucent colour (our highlighter applies its own translucency).
         val highlighter = alpha in 1..0xEF
         val opaque = if (highlighter || alpha == 0) color or (0xFF shl 24) else color
-        return NormStroke(opaque, highlighter, pts)
+        val key = (o["key"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return NormStroke(opaque, highlighter, pts, key)
     }
 
     /** Rotates the points by [radians] around the centre of their bounding box. */
@@ -153,7 +180,8 @@ object FlexcilInk {
                 val w = s.pts[i * 3 + 2]
                 pts[i * 3 + 2] = if (s.highlighter || !w.isFinite() || maxW <= 0f) 1f else pressureFor(w / maxW)
             }
-            Stroke(id++, if (s.highlighter) Tool.HIGHLIGHTER else Tool.PEN, s.color, width, pts)
+            Stroke(id++, if (s.highlighter) Tool.HIGHLIGHTER else Tool.PEN, s.color, width, pts,
+                rec = s.recordingId, recMs = s.recordingOffsetMs ?: 0L)
         }
         return PageInk(strokes = out)
     }

@@ -218,7 +218,7 @@ private fun EditorContent(
         value = withContext(Dispatchers.IO) {
             runCatching {
                 Recordings.list(context, skipId = Recorder.state.value.id).count {
-                    recordingBelongsToNote(it.id, it.meta.noteId, currentNote.id, ids)
+                    recordingBelongsToNote(it.id, it.meta.noteId, currentNote.id, ids, it.meta.noteIds)
                 }
             }.getOrDefault(0)
         }

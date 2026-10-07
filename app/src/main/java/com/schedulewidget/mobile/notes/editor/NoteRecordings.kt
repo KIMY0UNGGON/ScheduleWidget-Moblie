@@ -15,4 +15,5 @@ internal fun recordingBelongsToNote(
     recordingNoteId: String?,
     noteId: String,
     inkRecordingIds: Set<String>,
-): Boolean = recordingNoteId == noteId || recordingId in inkRecordingIds
+    recordingNoteIds: Collection<String> = emptyList(),
+): Boolean = recordingNoteId == noteId || noteId in recordingNoteIds || recordingId in inkRecordingIds

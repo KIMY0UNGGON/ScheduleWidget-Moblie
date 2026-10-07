@@ -13,6 +13,10 @@
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Existing note and sync regressions" />
     <instrumentation
+        android:name="com.schedulewidget.mobile.FlexcilAudioInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Original Flexcil audio, document links, and stroke timing" />
+    <instrumentation
         android:name="com.schedulewidget.mobile.pet.FloatingCalendarInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Service calendar popup and page turn regression" />

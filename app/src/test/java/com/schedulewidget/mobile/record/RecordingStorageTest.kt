@@ -1,6 +1,7 @@
 package com.schedulewidget.mobile.record
 
 import java.io.File
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -24,6 +25,23 @@ class RecordingStorageTest {
         assertFalse(RecordingMeta("../other", "title", 1, file = audio.name).matchesAudio(audio))
         assertFalse(RecordingMeta("lecture", "title", 1, file = "../other.m4a").matchesAudio(audio))
         assertFalse(RecordingMeta("lecture", "title", 1, file = audio.name, noteId = "../note").matchesAudio(audio))
+    }
+
+    @Test
+    fun legacySidecarsDefaultToNoExtraLinksAndEveryImportedLinkIsValidated() {
+        val audio = File("recordings/flex_lecture.m4a")
+        val legacy = Json.decodeFromString(
+            RecordingMeta.serializer(),
+            """{"id":"flex_lecture","title":"title","createdAt":1,"file":"flex_lecture.m4a","noteId":"legacy-note"}""",
+        )
+        assertEquals("legacy-note", legacy.noteId)
+        assertTrue(legacy.noteIds.isEmpty())
+        assertTrue(legacy.matchesAudio(audio))
+
+        val linked = legacy.copy(noteIds = listOf("note-a", "note-b"))
+        assertTrue(linked.matchesAudio(audio))
+        assertFalse(linked.copy(noteIds = listOf("note-a", "../outside")).matchesAudio(audio))
+        assertFalse(linked.copy(noteIds = listOf("note-a", "C:\\outside")).matchesAudio(audio))
     }
 
     @Test

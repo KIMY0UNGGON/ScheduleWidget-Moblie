@@ -275,8 +275,9 @@ object NoteImport {
     private suspend fun importFile(app: Context, uri: Uri, convert: Convert, folder: String?, work: File): Outcome {
         stage("파일 읽는 중")
         val name = NoteImportFiles.displayName(app, uri)
-        // Seekable SAF files avoid a second multi-GB cache copy of backup recordings we don't import.
-        if (FlexcilArchive.isFlexcilName(name) || name?.endsWith(".zip", true) == true) {
+        // Seekable SAF backups avoid a second multi-GB cache copy of their original recordings.
+        val archiveName = FlexcilArchive.isFlexcilName(name) || name?.endsWith(".zip", true) == true
+        if (archiveName) {
             val signal = CancellationSignal()
             activeCancellation = signal
             try {
@@ -285,6 +286,7 @@ object NoteImport {
                     activeInput = fd
                     try {
                         val direct = File("/proc/self/fd/${fd.fd}")
+                        if (fd.statSize > NoteImportFiles.MAX_FLEX_IMPORT_BYTES) throw ImportError("백업 파일이 4GB보다 커서 가져오지 못했어요")
                         if (fd.statSize > 0 && FlexcilArchive.looksLikeFlexcil(direct))
                             return flexcil(app, direct, name, folder, work)
                     } finally {
@@ -314,11 +316,12 @@ object NoteImport {
             throw e
         }
         activeInput = src
+        val inputLimit = if (archiveName) NoteImportFiles.MAX_FLEX_IMPORT_BYTES else NoteImportFiles.MAX_IMPORT_BYTES
         try {
             src.use { stream ->
                 input.outputStream().use { output ->
-                    if (!NoteImportFiles.copyLimited(stream, output, NoteImportFiles.MAX_IMPORT_BYTES) { importJob.ensureActive() }) {
-                        throw ImportError("파일이 1GB보다 커서 가져오지 못했어요")
+                    if (!NoteImportFiles.copyLimited(stream, output, inputLimit) { importJob.ensureActive() }) {
+                        throw ImportError(if (archiveName) "백업 파일이 4GB보다 커서 가져오지 못했어요" else "파일이 1GB보다 커서 가져오지 못했어요")
                     }
                 }
             }
@@ -335,6 +338,9 @@ object NoteImport {
         // A zip with another name ("backup.zip", a renamed export) may still be a Flexcil export.
         val isZip = head.size >= 4 && head[0] == 0x50.toByte() && head[1] == 0x4B.toByte()
         val kind = if (detected == FileKind.UNKNOWN && isZip && FlexcilArchive.looksLikeFlexcil(input)) FileKind.FLEXCIL else detected
+        if (kind != FileKind.FLEXCIL && input.length() > NoteImportFiles.MAX_IMPORT_BYTES) {
+            throw ImportError("파일이 1GB보다 커서 가져오지 못했어요")
+        }
         val title = name?.substringBeforeLast('.')?.trim()?.takeIf { it.isNotEmpty() } ?: "가져온 노트"
         currentCoroutineContext().ensureActive()
         return when (kind) {

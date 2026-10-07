@@ -26,6 +26,8 @@ class NoteRecordingsTest {
         assertEquals(setOf("rec-1", "rec-2"), linked)
         assertTrue(recordingBelongsToNote("rec-1", null, note.id, linked))
         assertTrue(recordingBelongsToNote("rec-3", note.id, note.id, linked))
+        assertTrue(recordingBelongsToNote("rec-multi", null, note.id, emptySet(), listOf("other-note", note.id)))
+        assertFalse(recordingBelongsToNote("rec-multi", null, "unrelated-note", emptySet(), listOf(note.id)))
         assertFalse(recordingBelongsToNote("rec-unrelated", null, note.id, linked))
     }
 
