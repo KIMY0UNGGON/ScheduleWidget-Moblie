@@ -33,8 +33,8 @@ data class UpdateRelease(val version: String, val assetId: Long, val assetName: 
 class UpdateException(message: String) : IOException(message)
 
 /**
- * Manual update check against the latest published stable GitHub release, plus a verified APK download.
- * The optional read-only token lives only in the caller's memory and is sent to api.github.com only.
+ * Manual anonymous update check against the latest published stable GitHub release, plus a verified APK download.
+ * Optional token parameters remain for older internal callers and are sent to api.github.com only.
  * Installing is left to the Android system installer (user consent); nothing here touches app data.
  */
 object AppUpdates {
@@ -79,7 +79,7 @@ object AppUpdates {
         // 404 means either "no published release" or "repository not visible"; never report that as up to date.
         if (getJson(API, auth) != null) throw UpdateException("아직 게시된 정식 릴리즈가 없어요 (초안·사전 릴리즈는 제외)")
         throw UpdateException(
-            if (auth.isEmpty()) "저장소가 비공개이거나 찾을 수 없어요. 읽기 전용 GitHub 토큰이 필요할 수 있어요"
+            if (auth.isEmpty()) "공개 GitHub 저장소 또는 릴리스를 찾을 수 없어요. 저장소 주소와 네트워크를 확인해 주세요"
             else "이 토큰으로 저장소에 접근할 수 없어요. 저장소 읽기 권한을 확인해 주세요",
         )
     }
@@ -281,7 +281,7 @@ object AppUpdates {
         return UpdateException(
             when {
                 limited -> "GitHub 요청 한도를 넘었어요. 잠시 후 다시 시도해 주세요"
-                code == 401 -> "GitHub 토큰이 올바르지 않거나 만료됐어요"
+                code == 401 -> if (hasToken) "GitHub 토큰이 올바르지 않거나 만료됐어요" else "GitHub가 요청을 거부했어요. 잠시 후 다시 시도해 주세요"
                 code == 403 -> if (hasToken) "토큰에 이 저장소를 읽을 권한이 없어요" else "GitHub가 접근을 거부했어요. 잠시 후 다시 시도해 주세요"
                 code == 404 -> "GitHub에서 릴리즈 파일을 찾을 수 없어요"
                 code >= 500 -> "GitHub 서버에 문제가 있어요. 잠시 후 다시 시도해 주세요"

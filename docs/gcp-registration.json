@@ -11,8 +11,8 @@
   "suggested_audience": "External / Testing until publication is requested",
   "android": {
     "package_name": "com.schedulewidget.mobile",
-    "version_name": "0.0",
-    "version_code": 4,
+    "version_name": "0.1",
+    "version_code": 5,
     "debug_sha1": "9A:16:08:76:BB:B1:A6:36:12:19:44:40:CB:8D:8C:11:2A:60:4F:F7",
     "production_signing_sha1": null
   },

@@ -13,6 +13,14 @@
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Existing note and sync regressions" />
     <instrumentation
+        android:name="com.schedulewidget.mobile.pet.FloatingCalendarInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Service calendar popup and page turn regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.ReleaseUpgradeInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Release upgrade preserves app data" />
+    <instrumentation
         android:name="com.schedulewidget.mobile.music.PlaybackServiceAccessInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Media session access boundary" />
@@ -24,6 +32,10 @@
         android:name="com.schedulewidget.mobile.NoteRecordingsInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Note-linked recordings UI regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.pet.CalendarHeaderInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Floating calendar header layout UI regression" />
     <instrumentation
         android:name="com.schedulewidget.mobile.OfficeSecurityInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"

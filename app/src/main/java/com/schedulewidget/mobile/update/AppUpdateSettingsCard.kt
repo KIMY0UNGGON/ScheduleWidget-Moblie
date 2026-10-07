@@ -12,12 +12,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,8 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.schedulewidget.mobile.BuildConfig
@@ -49,16 +45,13 @@ private const val APK_MIME = "application/vnd.android.package-archive"
 /**
  * Settings section "앱 업데이트": manual check, download with progress, and handing the verified APK to the
  * system package installer (the user confirms there). Nothing runs unless the user taps; all work belongs to
- * this composition, so leaving Settings cancels it and drops the token.
+ * this composition, so leaving Settings cancels it.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Token: plain remember only, never saved (no rememberSaveable, preferences, AppData or logs).
-    var token by remember { mutableStateOf("") }
-    var tokenOpen by remember { mutableStateOf(false) }
     var release by remember { mutableStateOf<UpdateRelease?>(null) }
     var prepared by remember { mutableStateOf<File?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -67,11 +60,6 @@ fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
     // Written from the download thread; collected on the main thread.
     val progress = remember { MutableStateFlow(0L) }
     val downloaded by progress.collectAsState()
-
-    fun errorText(e: Throwable): String {
-        val m = e.message ?: e.javaClass.simpleName
-        return if (token.isBlank()) m else m.replace(token, "***")
-    }
 
     fun runStep(label: String, block: suspend () -> Unit) {
         if (busy != null) return
@@ -83,7 +71,7 @@ fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
                 status = "취소했습니다"
                 throw e
             } catch (e: Exception) {
-                status = "$label 실패: ${errorText(e)}"
+                status = "$label 실패: ${e.message ?: e.javaClass.simpleName}"
             } finally {
                 busy = null
             }
@@ -139,7 +127,7 @@ fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
         Text("현재 버전", style = MaterialTheme.typography.bodyLarge)
         Text("Ver ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
         Text(
-            "직접 누를 때만 확인합니다. 설치는 Android 설치 화면에서 직접 확인해야 진행됩니다.",
+            "공개 GitHub 릴리스에서 직접 확인합니다. 설치는 Android 설치 화면에서 직접 확인해야 진행됩니다.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         release?.let { Text("최신 버전: ${it.version} (${mb(it.size)} MB)", Modifier.padding(top = 8.dp)) }
@@ -167,9 +155,9 @@ fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
                     release = null
                     prepared = null
                     status = null
-                    val found = withContext(Dispatchers.IO) { AppUpdates.check(BuildConfig.VERSION_NAME, token.trim()) }
+                    val found = withContext(Dispatchers.IO) { AppUpdates.check(BuildConfig.VERSION_NAME) }
                     release = found
-                    status = if (found == null) "확인 완료 · 최신 버전입니다" else "확인 완료 · 새 버전 ${found.version}이 있습니다"
+                    status = if (found == null) "확인 완료 · 새 공개 버전이 없습니다" else "확인 완료 · 새 버전 ${found.version}이 있습니다"
                 }
             }) { Text("업데이트 확인") }
             val rel = release
@@ -178,7 +166,7 @@ fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
                 runStep("다운로드") {
                     progress.value = 0L
                     val file = withContext(Dispatchers.IO) {
-                        AppUpdates.download(context.applicationContext, rel, token.trim()) { progress.value = it }
+                        AppUpdates.download(context.applicationContext, rel, onProgress = { progress.value = it })
                     }
                     prepared = file
                     // download returns only a fully validated file.
@@ -199,30 +187,6 @@ fun AppUpdateSettingsCard(modifier: Modifier = Modifier) {
             }) { Text("GitHub 릴리스 열기") }
         }
 
-        TextButton(onClick = { tokenOpen = !tokenOpen }) { Text(if (tokenOpen) "비공개 저장소 접근 ▲" else "비공개 저장소 접근 ▼") }
-        if (tokenOpen) {
-            OutlinedTextField(
-                value = token,
-                onValueChange = {
-                    // A different token may see different releases: drop everything checked with the old one.
-                    token = it
-                    release = null
-                    prepared = null
-                    status = null
-                },
-                enabled = busy == null,
-                singleLine = true,
-                label = { Text("GitHub 토큰") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "저장소가 비공개인 동안만 필요합니다. ${AppUpdates.REPOSITORY} 저장소 하나에 Contents 읽기(Read-only) 권한만 준 " +
-                    "fine-grained 토큰을 사용하세요. 토큰은 저장하지 않으며 이 화면을 나가면 지워집니다.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

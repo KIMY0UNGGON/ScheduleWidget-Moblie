@@ -17,9 +17,10 @@ import java.net.URL
 import java.net.URLStreamHandler
 import java.security.MessageDigest
 
-/** Runs against a disposable emulator and a locally built, same-key 0.1 APK fixture. No real GitHub token. */
+/** Runs against a disposable emulator and a locally built, same-key future APK fixture. No real GitHub token. */
 class AppUpdateInstrumentation : Instrumentation() {
     private lateinit var fixture: File
+    private var futureVersion = "0.2"
     private var mode = "available"
     private var apiAuthorization: String? = null
     private var cdnAuthorization: String? = null
@@ -28,6 +29,7 @@ class AppUpdateInstrumentation : Instrumentation() {
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         fixture = File(requireNotNull(arguments?.getString("futureApk")))
+        futureVersion = arguments?.getString("futureVersion")?.takeIf { it.isNotBlank() } ?: futureVersion
         showInstaller = arguments?.getString("showInstaller") == "true"
         start()
     }
@@ -41,8 +43,9 @@ class AppUpdateInstrumentation : Instrumentation() {
         }
         try {
             check(fixture.isFile) { "Missing local future-version APK fixture" }
-            val release = UpdateRelease("0.1", 123, "ScheduleWidget-mobile-notes.apk", fixture.length(), sha256(fixture), "${AppUpdates.RELEASES_URL}/tag/v0.1")
-            val metadata = """{"draft":false,"prerelease":false,"tag_name":"v0.1","html_url":"${release.releaseUrl}",
+            val installedVersion = targetContext.packageManager.getPackageInfo(targetContext.packageName, 0).versionName.orEmpty()
+            val release = UpdateRelease(futureVersion, 123, "ScheduleWidget-mobile-notes.apk", fixture.length(), sha256(fixture), "${AppUpdates.RELEASES_URL}/tag/v$futureVersion")
+            val metadata = """{"draft":false,"prerelease":false,"tag_name":"v$futureVersion","html_url":"${release.releaseUrl}",
                 "assets":[{"id":123,"name":"${release.assetName}","size":${release.size},"digest":"sha256:${release.sha256}",
                 "state":"uploaded","url":"https://api.github.com/repos/${AppUpdates.REPOSITORY}/releases/assets/123"}]}"""
             URL.setURLStreamHandlerFactory { protocol ->
@@ -79,16 +82,20 @@ class AppUpdateInstrumentation : Instrumentation() {
             }
             test("New stable release is offered; same version is current") {
                 mode = "available"
-                check(runBlocking { AppUpdates.check("0.0") }?.version == "0.1")
-                check(runBlocking { AppUpdates.check("0.1") } == null)
+                apiAuthorization = "unexpected"
+                check(installedVersion == "0.1") { "Unexpected installed version: $installedVersion" }
+                check(runBlocking { AppUpdates.check(installedVersion) }?.version == futureVersion)
+                check(apiAuthorization == null) { "Anonymous public update check sent Authorization" }
+                check(runBlocking { AppUpdates.check(futureVersion) } == null)
             }
-            test("Private repository and unpublished releases are errors") {
+            test("Missing public repository and unpublished releases are errors") {
                 mode = "private"
-                expectFailure("비공개") { runBlocking { AppUpdates.check("0.0") } }
+                expectFailure("공개 GitHub 저장소") { runBlocking { AppUpdates.check(installedVersion) } }
                 mode = "empty"
-                expectFailure("정식 릴리즈") { runBlocking { AppUpdates.check("0.0", "audit_read_only") } }
+                expectFailure("정식 릴리즈") { runBlocking { AppUpdates.check(installedVersion) } }
                 mode = "unauthorized"
-                expectFailure("토큰") { runBlocking { AppUpdates.check("0.0", "audit_read_only") } }
+                expectFailure("토큰") { runBlocking { AppUpdates.check(installedVersion, "audit_read_only") } }
+                expectFailure("GitHub가 요청을 거부") { runBlocking { AppUpdates.check(installedVersion) } }
             }
             test("Same-key newer APK passes Android package validation") {
                 AppUpdates.validateApk(targetContext, release, fixture)
@@ -96,7 +103,7 @@ class AppUpdateInstrumentation : Instrumentation() {
             test("Installed APK cannot be offered as an upgrade") {
                 val own = File(targetContext.applicationInfo.sourceDir)
                 expectFailure("버전 코드") {
-                    AppUpdates.validateApk(targetContext, release.copy(version = "0.0", size = own.length(), sha256 = sha256(own)), own)
+                    AppUpdates.validateApk(targetContext, release.copy(version = installedVersion, size = own.length(), sha256 = sha256(own)), own)
                 }
             }
             test("Download verifies bytes and APK; token stays on GitHub API") {
@@ -108,6 +115,14 @@ class AppUpdateInstrumentation : Instrumentation() {
                 val uri = FileProvider.getUriForFile(targetContext, "${targetContext.packageName}.files", apk)
                 check(uri.scheme == "content")
                 check(targetContext.contentResolver.openInputStream(uri)!!.use { it.read() } == 0x50)
+            }
+            test("Anonymous public APK download sends no Authorization") {
+                mode = "available"
+                apiAuthorization = "unexpected"
+                cdnAuthorization = "unexpected"
+                val apk = runBlocking { AppUpdates.download(targetContext, release, onProgress = {}) }
+                check(apk.length() == release.size)
+                check(apiAuthorization == null && cdnAuthorization == null) { "Anonymous download sent Authorization" }
             }
             test("Wrong digest removes partial and rejected download") {
                 expectFailure("해시") { runBlocking { AppUpdates.download(targetContext, release.copy(sha256 = "b".repeat(64))) } }

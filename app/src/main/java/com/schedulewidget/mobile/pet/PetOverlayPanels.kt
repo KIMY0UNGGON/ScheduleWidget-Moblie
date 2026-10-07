@@ -27,7 +27,7 @@ internal class PetOverlayPanels(private val service: PetOverlayService) {
     private var params: WindowManager.LayoutParams? = null
     private var heightCarry = 0f
 
-    private fun minWidth() = (200 * service.resources.displayMetrics.density).roundToInt()
+    private fun minWidth() = (280 * service.resources.displayMetrics.density).roundToInt()
 
     private fun maxCalendarWidth() = service.resources.displayMetrics.widthPixels
 
@@ -191,12 +191,15 @@ internal class PetOverlayPanels(private val service: PetOverlayService) {
                 // Keep Android's edge-back gesture from cancelling the resize grips; at most 200dp per side.
                 val density = service.resources.displayMetrics.density
                 val corner = (34 * density).roundToInt()
+                val cornerEdge = (10 * density).roundToInt()
                 val side = (16 * density).roundToInt()
                 val halfMiddle = minOf(height * 0.3f, 66 * density).roundToInt()
                 val width = changedView.width
                 changedView.systemGestureExclusionRects = listOf(
-                    Rect(0, 0, corner, corner), Rect(width - corner, 0, width, corner),
-                    Rect(0, height - corner, corner, height), Rect(width - corner, height - corner, width, height),
+                    Rect(0, 0, cornerEdge, corner), Rect(0, 0, corner, cornerEdge),
+                    Rect(width - cornerEdge, 0, width, corner), Rect(width - corner, 0, width, cornerEdge),
+                    Rect(0, height - corner, cornerEdge, height), Rect(0, height - cornerEdge, corner, height),
+                    Rect(width - cornerEdge, height - corner, width, height), Rect(width - corner, height - cornerEdge, width, height),
                     Rect(0, height / 2 - halfMiddle, side, height / 2 + halfMiddle),
                     Rect(width - side, height / 2 - halfMiddle, width, height / 2 + halfMiddle),
                 )
@@ -225,7 +228,12 @@ internal class PetOverlayPanels(private val service: PetOverlayService) {
                 placed = true
                 panelParams.y = y
                 panelParams.alpha = 1f
-                runCatching { service.windows.updateViewLayout(changedView, panelParams) }
+                // Relayout after this layout pass so the View's screen coordinates follow the moved window.
+                changedView.post {
+                    if (changedView.isAttachedToWindow && view === changedView) {
+                        runCatching { service.windows.updateViewLayout(changedView, panelParams) }
+                    }
+                }
             }
         }
         if (panel == PetPanel.Calendar) calendarHeight.intValue = saved.petCalendarHeight.coerceIn(MIN_CAL_HEIGHT, maxCalendarHeight())

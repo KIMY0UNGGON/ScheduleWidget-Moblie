@@ -126,7 +126,7 @@ internal fun rememberBoardPageMotion(view: String, start: LocalDate, theme: Mini
     }
 }
 
-private fun calendarAnimationsEnabled(context: android.content.Context): Boolean =
+internal fun calendarAnimationsEnabled(context: android.content.Context): Boolean =
     ValueAnimator.areAnimatorsEnabled() &&
         Settings.Global.getFloat(context.contentResolver, Settings.Global.WINDOW_ANIMATION_SCALE, 1f) > 0f &&
         Settings.Global.getFloat(context.contentResolver, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f) > 0f

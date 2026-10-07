@@ -8,12 +8,10 @@ import com.schedulewidget.mobile.ui.calendarTextFactor
 import com.schedulewidget.mobile.ui.rememberCalendarToday
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.ExperimentalComposeUiApi
 import android.view.MotionEvent
@@ -31,16 +29,35 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -48,7 +65,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +81,7 @@ import com.schedulewidget.mobile.ui.KoreanHolidays
 import com.schedulewidget.mobile.ui.MiniThemes
 import com.schedulewidget.mobile.ui.Route
 import com.schedulewidget.mobile.ui.ScheduleColors
+import com.schedulewidget.mobile.ui.CalendarPageFlip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
@@ -90,107 +111,215 @@ fun OverlayCalendar(
     val data by remember { Repository.get(context) }.data.collectAsState()
     val theme = MiniThemes.of(data.miniTheme)
     val today = rememberCalendarToday()
-    val days = remember(today) { (0L until 7L).map { today.plusDays(it) } }
-    val events by produceState(emptyList<DeviceEvent>(), today, data.calendar, data.schedules, data.googleCalendar) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { DeviceCalendar.events(context, today, today.plusDays(7)) }.getOrDefault(emptyList())
-        }
+    var shownStart by rememberSaveable { mutableStateOf(today.toString()) }
+    var followsToday by rememberSaveable { mutableStateOf(true) }
+    val headerHeightPx = remember { mutableIntStateOf(0) }
+    val start = if (followsToday) today else runCatching { LocalDate.parse(shownStart) }.getOrDefault(today)
+    val days = remember(start) { (0L until 7L).map { start.plusDays(it) } }
+    val addDate = if (today in days) today else start
+    var themeMenu by remember { mutableStateOf(false) }
+    fun movePage(offsetDays: Long) {
+        val current = if (followsToday) today else runCatching { LocalDate.parse(shownStart) }.getOrDefault(today)
+        val next = current.plusDays(offsetDays)
+        shownStart = next.toString()
+        followsToday = next == today
     }
-    val scheduleByDay = remember(data.schedules, today) { ScheduleDates.byDay(data.schedules, today, today.plusDays(6)) }
-    val eventsByDay = remember(events) { events.groupBy { it.date } }
     // Same paper-calendar card as the in-app board (ui/CalendarBoard.kt): 18dp corners, 2dp frame.
     val shape = RoundedCornerShape(18.dp)
 
     BoxWithConstraints {
-    val dayWidth = ((maxWidth.value - 48f) / 7f).coerceAtLeast(12f)
-    val panelTextScale = ((dayWidth / 64f) * (dayHeight / 260f).coerceIn(0.9f, 1.2f)).coerceIn(0.52f, 1.35f)
+    val density = LocalDensity.current
+    val compactHeader = maxWidth < 380.dp
+    val dayWidth = ((maxWidth.value - 48f) / 7f).coerceAtLeast(48f)
+    val panelTextScale = ((dayWidth / 64f) * (dayHeight / 260f).coerceIn(0.9f, 1.2f)).coerceIn(0.75f, 1.35f)
+    val period = if (compactHeader) {
+        "${start.monthValue}.${start.dayOfMonth}-${days.last().monthValue}.${days.last().dayOfMonth}"
+    } else {
+        "${start.monthValue}.${start.dayOfMonth} — ${days.last().monthValue}.${days.last().dayOfMonth}"
+    }
+    val themeButton: @Composable () -> Unit = {
+        Box(Modifier.size(48.dp)) {
+            IconButton(onClick = { themeMenu = true }) {
+                Box(Modifier.size(24.dp)) {
+                    Icon(Icons.Filled.Palette, contentDescription = "테마 선택: ${theme.label}", tint = theme.topInk)
+                    Icon(
+                        Icons.Filled.ArrowDropDown, contentDescription = null,
+                        modifier = Modifier.align(Alignment.BottomEnd).size(14.dp).background(theme.top), tint = theme.topInk,
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = themeMenu, onDismissRequest = { themeMenu = false },
+                containerColor = theme.paper, tonalElevation = 0.dp,
+            ) {
+                MiniThemes.all.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        leadingIcon = {
+                            Box(Modifier.size(20.dp).clip(CircleShape).background(option.paper).border(3.dp, option.frame, CircleShape))
+                        },
+                        trailingIcon = { if (option.id == theme.id) Icon(Icons.Filled.Check, "선택됨") },
+                        colors = MenuDefaults.itemColors(
+                            textColor = theme.ink, leadingIconColor = theme.muted, trailingIconColor = theme.ink,
+                        ),
+                        onClick = {
+                            themeMenu = false
+                            Repository.get(context).update { it.copy(miniTheme = option.id) }
+                        },
+                    )
+                }
+                HorizontalDivider(color = theme.hairline)
+                DropdownMenuItem(
+                    text = { Text("일정 추가") },
+                    leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    colors = MenuDefaults.itemColors(textColor = theme.ink, leadingIconColor = theme.muted),
+                    onClick = { themeMenu = false; onAdd(addDate) },
+                )
+                DropdownMenuItem(
+                    text = { Text("달력 닫기") },
+                    leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
+                    colors = MenuDefaults.itemColors(textColor = theme.ink, leadingIconColor = theme.muted),
+                    onClick = { themeMenu = false; onClose() },
+                )
+            }
+        }
+    }
     Column(
         Modifier.padding(10.dp).shadow(8.dp, shape).clip(shape).background(theme.paper)
             .border(2.dp, theme.frame, shape),
     ) {
         Column(
             // Extra top padding keeps the header text clear of the binding rings that hang over the top edge.
-            Modifier.fillMaxWidth().background(theme.top).padding(start = 14.dp, end = 4.dp, top = 8.dp),
+            Modifier.fillMaxWidth().onSizeChanged { headerHeightPx.intValue = it.height }
+                .background(theme.top).padding(start = 4.dp, end = 4.dp, top = 8.dp),
         ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.weight(1f).heightIn(min = 48.dp).calendarMoveHandle(onMove),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-            Text(
-                "${today.monthValue}.${today.dayOfMonth} — ${days.last().monthValue}.${days.last().dayOfMonth}",
-                color = theme.topInk, fontWeight = FontWeight.Bold,
-                fontSize = (15f * panelTextScale).coerceAtLeast(11f).sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            if (compactHeader) {
+                Box(
+                    Modifier.fillMaxWidth().heightIn(min = 20.dp).calendarMoveHandle(onMove),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        period, color = theme.topInk, fontWeight = FontWeight.Bold,
+                        fontSize = (15f * panelTextScale).coerceAtLeast(11f).sp,
+                        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { movePage(-7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 7일", tint = theme.topInk) }
+                    themeButton()
+                    IconButton(onClick = { onOpenApp(Route.Mini) }) {
+                        Icon(Icons.Filled.OpenInNew, contentDescription = "앱 열기", tint = theme.topInk)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { onOpenApp(Route.Settings) }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "설정", tint = theme.topInk)
+                    }
+                    IconButton(onClick = { movePage(7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 7일", tint = theme.topInk) }
+                }
+            } else {
+                Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Box(
+                        Modifier.fillMaxWidth().padding(start = 144.dp, end = 144.dp).heightIn(min = 48.dp).calendarMoveHandle(onMove),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            period, color = theme.topInk, fontWeight = FontWeight.Bold,
+                            fontSize = (15f * panelTextScale).coerceAtLeast(11f).sp,
+                            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.width(144.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { movePage(-7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 7일", tint = theme.topInk) }
+                            themeButton()
+                            IconButton(onClick = { onOpenApp(Route.Mini) }) {
+                                Icon(Icons.Filled.OpenInNew, contentDescription = "앱 열기", tint = theme.topInk)
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Row(Modifier.width(96.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { onOpenApp(Route.Settings) }) {
+                                Icon(Icons.Filled.Settings, contentDescription = "설정", tint = theme.topInk)
+                            }
+                            IconButton(onClick = { movePage(7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 7일", tint = theme.topInk) }
+                        }
+                    }
+                }
             }
-            TextButton(onClick = { onOpenApp(Route.Settings) }) { Text("설정", color = theme.topInk, fontSize = 12.sp) }
-            TextButton(onClick = onClose) { Text("✕", color = theme.topInk, fontSize = 15.sp) }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { onAdd(today) }) { Text("+ 일정", color = theme.topInk, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            TextButton(onClick = { onOpenApp(Route.Mini) }) { Text("앱 열기", color = theme.topInk, fontSize = 13.sp) }
-        }
         }
         // All seven dates share the available width; the user's font setting scales with the panel.
         CompositionLocalProvider(
             LocalCalendarTextScale provides data.calendarTextFactor * panelTextScale,
             LocalCalendarToday provides today,
         ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            for (day in days) {
-                val holiday = KoreanHolidays.nameOf(day)
-                val tasks = scheduleByDay[day].orEmpty()
-                val dayEvents = eventsByDay[day].orEmpty()
-                // Same per-day colour assignment as the mini calendar board.
-                val blocks = ScheduleColors.blockColors(tasks)
-                val dayColor = when {
-                    holiday != null || day.dayOfWeek == DayOfWeek.SUNDAY -> theme.holiday
-                    day.dayOfWeek == DayOfWeek.SATURDAY -> theme.saturday
-                    else -> theme.weekday
-                }
-                Column(
-                    Modifier.weight(1f).height(dayHeight.dp).clip(RoundedCornerShape(10.dp))
-                        .background(if (day == today) theme.today else theme.day)
-                        .clickable { onAdd(day) }
-                        .padding(horizontal = 2.dp, vertical = 6.dp),
-                ) {
-                    Column {
-                        Text("${day.dayOfMonth}", color = dayColor, fontWeight = FontWeight.Bold, fontSize = calSp(17f))
-                        Spacer(Modifier.height(1.dp))
-                        Text(day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN), color = dayColor, fontSize = calSp(11f),
-                            modifier = Modifier.padding(bottom = 2.dp))
+            CalendarPageFlip(
+                start = start, effect = data.miniFlipEffect, paper = theme.paper, aboveRoomPx = headerHeightPx.intValue,
+                modifier = Modifier.fillMaxWidth(),
+            ) { pageStart ->
+                val pageDays = remember(pageStart) { (0L until 7L).map { pageStart.plusDays(it) } }
+                val pageEvents by produceState(emptyList<DeviceEvent>(), pageStart, data.calendar, data.schedules, data.googleCalendar) {
+                    value = withContext(Dispatchers.IO) {
+                        runCatching { DeviceCalendar.events(context, pageStart, pageStart.plusDays(7)) }.getOrDefault(emptyList())
                     }
-                    holiday?.let { Text(it, color = dayColor, fontSize = calSp(10f), lineHeight = calSp(12f), maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    Column(
-                        Modifier.padding(top = 4.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        if (tasks.isEmpty() && dayEvents.isEmpty()) Text("일정 없음", color = theme.muted, fontSize = calSp(11f))
-                        for (t in tasks) {
-                            val bg = blocks[t.id] ?: theme.accent
-                            Chip(
-                                text = (if (t.important) "★ " else "") + (if (t.rangeLabel.isEmpty()) "" else "${t.rangeLabel} ") +
-                                    (t.time?.let { "$it " } ?: "") + t.title, background = bg,
-                                ink = ScheduleColors.readableOn(bg), done = t.isCompleted,
-                                trailing = t.dDay(today).takeIf { data.miniBlockDDayVisible },
-                                onClick = { context.startActivity(QuickAddActivity.editIntent(context, t.id)) },
-                            )
+                }
+                val pageSchedules = remember(data.schedules, pageStart) {
+                    ScheduleDates.byDay(data.schedules, pageStart, pageStart.plusDays(6))
+                }
+                val pageEventsByDay = remember(pageEvents) { pageEvents.groupBy { it.date } }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    for (day in pageDays) {
+                        val holiday = KoreanHolidays.nameOf(day)
+                        val tasks = pageSchedules[day].orEmpty()
+                        val dayEvents = pageEventsByDay[day].orEmpty()
+                        // Same per-day colour assignment as the mini calendar board.
+                        val blocks = ScheduleColors.blockColors(tasks)
+                        val dayColor = when {
+                            holiday != null || day.dayOfWeek == DayOfWeek.SUNDAY -> theme.holiday
+                            day.dayOfWeek == DayOfWeek.SATURDAY -> theme.saturday
+                            else -> theme.weekday
                         }
-                        for (e in dayEvents) {
-                            Chip(
-                                text = (e.time?.let { "$it " } ?: "") + e.title, done = e.done,
-                                background = theme.surface, ink = theme.ink, border = e.color?.let { Color(it or 0xFF000000.toInt()) } ?: theme.accent,
-                                onClick = { DeviceCalendar.open(context, e.date, e.id) },
-                            )
+                        Column(
+                            Modifier.width(dayWidth.dp).height(dayHeight.dp).clip(RoundedCornerShape(10.dp))
+                                .background(if (day == today) theme.today else theme.day)
+                                .clickable { onAdd(day) }
+                                .padding(horizontal = 2.dp, vertical = 6.dp),
+                        ) {
+                            Column {
+                                Text("${day.dayOfMonth}", color = dayColor, fontWeight = FontWeight.Bold, fontSize = calSp(17f))
+                                Spacer(Modifier.height(1.dp))
+                                Text(day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN), color = dayColor, fontSize = calSp(11f),
+                                    modifier = Modifier.padding(bottom = 2.dp))
+                            }
+                            holiday?.let { Text(it, color = dayColor, fontSize = calSp(10f), lineHeight = calSp(12f), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            Column(
+                                Modifier.padding(top = 4.dp).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                for (t in tasks) {
+                                    val bg = blocks[t.id] ?: theme.accent
+                                    Chip(
+                                        text = (if (t.important) "★ " else "") + (if (t.rangeLabel.isEmpty()) "" else "${t.rangeLabel} ") +
+                                            (t.time?.let { "$it " } ?: "") + t.title, background = bg,
+                                        ink = ScheduleColors.readableOn(bg), done = t.isCompleted,
+                                        trailing = t.dDay(today).takeIf { data.miniBlockDDayVisible },
+                                        onClick = { context.startActivity(QuickAddActivity.editIntent(context, t.id)) },
+                                    )
+                                }
+                                for (e in dayEvents) {
+                                    Chip(
+                                        text = (e.time?.let { "$it " } ?: "") + e.title, done = e.done,
+                                        background = theme.surface, ink = theme.ink, border = e.color?.let { Color(it or 0xFF000000.toInt()) } ?: theme.accent,
+                                        onClick = { DeviceCalendar.open(context, e.date, e.id) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
         }
         Spacer(Modifier.padding(bottom = 4.dp))
     }
@@ -211,13 +340,15 @@ fun OverlayCalendar(
     if (onResize != null) Box(Modifier.matchParentSize()) {
         // Four corners, plus the left, right and bottom sides (the top side is the header with its buttons).
         val corner = 34.dp
-        ResizeGrip(ResizeEdges(left = true, top = true), theme.muted, onResize, onResizeEnd, Modifier.align(Alignment.TopStart).size(corner))
-        ResizeGrip(ResizeEdges(right = true, top = true), theme.muted, onResize, onResizeEnd, Modifier.align(Alignment.TopEnd).size(corner))
-        ResizeGrip(ResizeEdges(left = true, bottom = true), theme.muted, onResize, onResizeEnd, Modifier.align(Alignment.BottomStart).size(corner))
-        ResizeGrip(ResizeEdges(right = true, bottom = true), theme.muted, onResize, onResizeEnd, Modifier.align(Alignment.BottomEnd).size(corner))
-        ResizeGrip(ResizeEdges(left = true), null, onResize, onResizeEnd, Modifier.align(Alignment.CenterStart).width(16.dp).fillMaxHeight(0.6f))
-        ResizeGrip(ResizeEdges(right = true), null, onResize, onResizeEnd, Modifier.align(Alignment.CenterEnd).width(16.dp).fillMaxHeight(0.6f))
-        ResizeGrip(ResizeEdges(bottom = true), null, onResize, onResizeEnd, Modifier.align(Alignment.BottomCenter).height(16.dp).fillMaxWidth(0.6f))
+        val cornerPx = with(density) { corner.toPx() }
+        val edgePx = with(density) { 10.dp.toPx() }
+        ResizeGrip(ResizeEdges(left = true, top = true), onResize, onResizeEnd, Modifier.align(Alignment.TopStart).size(corner), cornerPx, edgePx)
+        ResizeGrip(ResizeEdges(right = true, top = true), onResize, onResizeEnd, Modifier.align(Alignment.TopEnd).size(corner), cornerPx, edgePx)
+        ResizeGrip(ResizeEdges(left = true, bottom = true), onResize, onResizeEnd, Modifier.align(Alignment.BottomStart).size(corner), cornerPx, edgePx)
+        ResizeGrip(ResizeEdges(right = true, bottom = true), onResize, onResizeEnd, Modifier.align(Alignment.BottomEnd).size(corner), cornerPx, edgePx)
+        ResizeGrip(ResizeEdges(left = true), onResize, onResizeEnd, Modifier.align(Alignment.CenterStart).width(16.dp).fillMaxHeight(0.6f))
+        ResizeGrip(ResizeEdges(right = true), onResize, onResizeEnd, Modifier.align(Alignment.CenterEnd).width(16.dp).fillMaxHeight(0.6f))
+        ResizeGrip(ResizeEdges(bottom = true), onResize, onResizeEnd, Modifier.align(Alignment.BottomCenter).height(16.dp).fillMaxWidth(0.6f))
     }
     }
 }
@@ -244,41 +375,39 @@ private fun Modifier.calendarMoveHandle(onMove: ((Float, Float) -> Unit)?): Modi
 /** Which sides a grip moves: right/bottom grow the panel away from the top-left; left/top keep the opposite side still. */
 data class ResizeEdges(val left: Boolean = false, val top: Boolean = false, val right: Boolean = false, val bottom: Boolean = false)
 
-/**
- * A resize handle. Uses raw screen coordinates because the window itself moves/grows under the finger.
- * Corner grips draw a small L mark ([tint]); side grips are invisible strips.
- */
+/** A resize handle. Uses raw screen coordinates because the window itself moves/grows under the finger. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ResizeGrip(
-    edges: ResizeEdges, tint: Color?, onResize: (ResizeEdges, Float, Float) -> Unit, onEnd: () -> Unit, modifier: Modifier,
+    edges: ResizeEdges, onResize: (ResizeEdges, Float, Float) -> Unit, onEnd: () -> Unit, modifier: Modifier,
+    cornerSizePx: Float? = null, edgeSizePx: Float = 0f,
 ) {
     var lastX by remember { mutableFloatStateOf(0f) }
     var lastY by remember { mutableFloatStateOf(0f) }
-    Canvas(
+    var resizing by remember { mutableStateOf(false) }
+    Spacer(
         modifier.pointerInteropFilter { e ->
+            val wasResizing = resizing
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { lastX = e.rawX; lastY = e.rawY }
-                MotionEvent.ACTION_MOVE -> {
+                MotionEvent.ACTION_DOWN -> {
+                    resizing = cornerSizePx?.let { size ->
+                        (edges.left && e.x <= edgeSizePx) || (edges.right && e.x >= size - edgeSizePx) ||
+                            (edges.top && e.y <= edgeSizePx) || (edges.bottom && e.y >= size - edgeSizePx)
+                    } ?: true
+                    if (resizing) { lastX = e.rawX; lastY = e.rawY }
+                }
+                MotionEvent.ACTION_MOVE -> if (resizing) {
                     onResize(edges, e.rawX - lastX, e.rawY - lastY)
                     lastX = e.rawX; lastY = e.rawY
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onEnd()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (resizing) {
+                    onEnd()
+                    resizing = false
+                }
             }
-            true
+            wasResizing || resizing
         },
-    ) {
-        if (tint == null) return@Canvas
-        val inset = 7.dp.toPx()
-        val len = 11.dp.toPx()
-        val stroke = 3.dp.toPx()
-        val x = if (edges.left) inset else size.width - inset
-        val y = if (edges.top) inset else size.height - inset
-        val dx = if (edges.left) len else -len
-        val dy = if (edges.top) len else -len
-        drawLine(tint, Offset(x, y), Offset(x + dx, y), stroke, StrokeCap.Round)
-        drawLine(tint, Offset(x, y), Offset(x, y + dy), stroke, StrokeCap.Round)
-    }
+    )
 }
 
 @Composable

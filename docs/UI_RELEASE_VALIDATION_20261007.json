@@ -1,0 +1,71 @@
+{
+  "Project": "ScheduleWidget-mobile-notes",
+  "Date": "2026-10-07",
+  "VersionName": "0.1",
+  "VersionCode": 5,
+  "Unit": {
+    "tests": 206,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1
+  },
+  "Lint": {
+    "Error": 0,
+    "Warning": 110,
+    "Hint": 2
+  },
+  "Build": [
+    "testDebugUnitTest",
+    "lintDebug",
+    "assembleDebug",
+    "assembleDebugAndroidTest",
+    "assembleRelease"
+  ],
+  "DeviceApi": 35,
+  "EmulatorVersion": "37.2.12",
+  "RuntimeSuites": [
+    "pet.CalendarHeaderInstrumentation",
+    "pet.FloatingCalendarInstrumentation",
+    "AppUpdateInstrumentation",
+    "ReleaseUpgradeInstrumentation"
+  ],
+  "HeaderWidthsDp": [
+    280,
+    320,
+    400,
+    800
+  ],
+  "FontScales": [
+    1.0,
+    1.5
+  ],
+  "AnimationEffectsVerified": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "AnimationCaptureScale": 5.0,
+  "AnimationRapidInputScale": 1.0,
+  "UpdaterChecksPassed": 8,
+  "UpgradeDataPreserved": true,
+  "ReleaseDebuggable": false,
+  "SignerSHA256": "99346b4c5e15fb9b43641f2f7756b6d91c82f76c31c5c895ad298adbd3192202",
+  "ApkSHA256": "e97958f44ea347bbd0d99e57245354dd60a5670107d4e92a9ee5d2b733e79f12",
+  "Changes": [
+    "기간 가운데 정렬·헤더 축소·양 끝 7일 이동 화살표",
+    "왼쪽 테마 드롭다운·앱 열기와 오른쪽 설정 아이콘",
+    "빈 날짜 안내 문구 및 모서리 표시선 제거·크기 조절 유지",
+    "데스크톱을 참고한 종이 넘김·접힘과 6개 뒷면 표시 효과",
+    "레이아웃 완료 후 오버레이 창 위치 갱신·실제 resize 영역에 맞춘 Back 제스처 제외",
+    "0.1 공개 릴리스 익명 확인·다운로드"
+  ],
+  "Limits": [
+    "실제 개인 Flex 백업 파일이 필요한 기존 단위 검사 1개 제외",
+    "Android 창 밖으로 나가는 종이 뒷면은 표시하지 않으며 데스크톱 비율을 헤더 공간에 맞춰 적용",
+    "프레임 캡처는 OS 애니메이션 배율 5에서 확인하고 연속 입력은 배율 1에서 확인",
+    "Flexcil 원본 녹음과 필기별 재생 시각 복원은 기존과 같이 미지원"
+  ]
+}
