@@ -1,0 +1,65 @@
+{
+  "Project": "ScheduleWidget-mobile-notes",
+  "Date": "2026-10-07",
+  "Unit": {
+    "tests": 204,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1
+  },
+  "Lint": {
+    "Warning": 110,
+    "Hint": 2
+  },
+  "Build": [
+    "assembleDebug",
+    "assembleDebugAndroidTest"
+  ],
+  "DeviceApi": 35,
+  "RuntimeSuites": [
+    "music.PlaybackServiceAccessInstrumentation",
+    "music.PlaybackServicePolicyInstrumentation",
+    "OfficeSecurityInstrumentation",
+    "NoteRecordingsInstrumentation",
+    "NoteOpenWithUriSafetyInstrumentation",
+    "AuditInstrumentation",
+    "NoteStoreSafetyInstrumentation",
+    "PrivacyInstrumentation",
+    "ParityInstrumentation",
+    "NoteDeletionInstrumentation",
+    "FlexFolderInstrumentation",
+    "EditorKeyUiInstrumentation"
+  ],
+  "RuntimePassed": 12,
+  "ExternalMediaProbe": {
+    "Baseline": "connected; media write commands allowed; shortcut public",
+    "Patched": "connection rejected; no media write commands; shortcut blocked"
+  },
+  "Feature": [
+    "PDF/노트에서 연결된 녹음 조회·재생",
+    "새 녹음의 noteId 보존 및 기존 모든 페이지의 필기 연결 지원",
+    "M4A 저장·공유와 전사본 TXT 저장"
+  ],
+  "Repairs": [
+    "외부 미디어 세션의 권한과 URI 제한",
+    "공개 신분증 진입점 및 자체 FileProvider URI 우회 차단",
+    "문서·ZIP·XML·JSON·PDF 입력량과 페이지 수 제한",
+    "모델 SHA-256·크기·리디렉션 및 압축 해제 검증",
+    "WAV 헤더 할당 제한",
+    "녹음 메타데이터 경로 검증과 PDF SHA-256 식별",
+    "계정이 불명확한 Google 일정 연결 초기화",
+    "원본을 지우지 않는 녹음·전사본 원자적 저장"
+  ],
+  "Hardening": [
+    "Google OAuth 범위 최소화",
+    "Commons Compress 1.28.0으로 취약한 전이 의존성 교체",
+    "Gradle 배포 SHA-256 고정"
+  ],
+  "Limits": [
+    "개인 실제 Flexcil 백업 파일이 필요한 기존 단위 검사 1개는 제외",
+    "Flexcil 원본 녹음과 필기별 재생 시각 복원은 미지원",
+    "실제 Google 로그인·실제 음성 모델 전사·실제 YouTube 재생은 이번 검사에서 실행하지 않음",
+    "취소 신호를 무시하는 외부 문서 제공자는 IO 작업 종료를 지연시킬 수 있음"
+  ],
+  "ApkSHA256": "f27241113996da9f3ac76244890fb8e7c99f69376595f8db2a6b0606d124f422"
+}

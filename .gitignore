@@ -13,3 +13,4 @@ client_secret*.json
 credentials*.json
 /.snapshots/
 /output/
+replay_pid*.log

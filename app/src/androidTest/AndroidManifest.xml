@@ -1,8 +1,33 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.schedulewidget.mobile" />
+    </queries>
+    <application>
+        <activity
+            android:name="com.schedulewidget.mobile.music.PlaybackServiceAttackerActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
     <instrumentation
         android:name="com.schedulewidget.mobile.AuditInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Existing note and sync regressions" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.music.PlaybackServiceAccessInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Media session access boundary" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.music.PlaybackServicePolicyInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Media session policy checks" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.NoteRecordingsInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Note-linked recordings UI regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.OfficeSecurityInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Office importer XML hardening" />
     <instrumentation
         android:name="com.schedulewidget.mobile.ParityInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"

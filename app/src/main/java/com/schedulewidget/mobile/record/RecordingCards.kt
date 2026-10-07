@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Stop
@@ -63,7 +64,7 @@ import java.util.Locale
 
 /** Top card: a big 녹음 / 정지 button with the elapsed time, and the current settings in one line. */
 @Composable
-internal fun RecordNowCard(rec: RecordingState) {
+internal fun RecordNowCard(rec: RecordingState, onStartRecording: (() -> Unit)? = null) {
     val context = LocalContext.current
     val data by remember { Repository.get(context) }.data.collectAsStateWithLifecycle()
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
@@ -88,9 +89,13 @@ internal fun RecordNowCard(rec: RecordingState) {
             ) {
                 Icon(Icons.Outlined.Stop, null, Modifier.size(22.dp)); Spacer(Modifier.width(6.dp))
                 Text("정지하고 저장", style = MaterialTheme.typography.titleMedium)
-            } else Button(onClick = { Recorder.start(context) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            } else Button(
+                onClick = { if (onStartRecording != null) onStartRecording() else Recorder.start(context) },
+                enabled = data.stt.enabled,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
                 Icon(Icons.Outlined.Mic, null, Modifier.size(22.dp)); Spacer(Modifier.width(6.dp))
-                Text("녹음 시작", style = MaterialTheme.typography.titleMedium)
+                Text(if (data.stt.enabled) "녹음 시작" else "녹음 기능을 켜면 시작할 수 있어요", style = MaterialTheme.typography.titleMedium)
             }
             MicGainSetting(Modifier.padding(top = 12.dp))
             Spacer(Modifier.height(8.dp))
@@ -126,6 +131,7 @@ internal fun RecordingCard(
     hasTranscript: Boolean,
     onTranscribe: () -> Unit,
     onOpenTranscript: () -> Unit,
+    onExportAudio: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -192,6 +198,9 @@ internal fun RecordingCard(
                     runCatching { context.startActivity(Recordings.shareIntent(context, item)) }
                         .onFailure { Toast.makeText(context, "공유할 수 없어요", Toast.LENGTH_SHORT).show() }
                 }) { Icon(Icons.Outlined.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("공유") }
+                OutlinedButton(onClick = onExportAudio) {
+                    Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("파일로 저장")
+                }
                 DeleteButton(onDelete)
             }
         }

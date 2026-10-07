@@ -27,6 +27,9 @@ object PetImport {
     private const val MAX_JSON = 64 * 1024
     private const val MAX_IMAGE = 25 * 1024 * 1024
     private const val MAX_ZIP = 30 * 1024 * 1024
+    // Desktop exports contain two entries; leave room for extras while bounding retained metadata.
+    private const val MAX_ZIP_ENTRIES = 1024
+    private const val MAX_ZIP_ENTRY_NAME_CHARS = 2048
     private const val MAX_PIXELS = 25_000_000L
     private const val BUILDING = ".importing"
     private val json = Json { ignoreUnknownKeys = true }
@@ -109,9 +112,11 @@ object PetImport {
     private fun importZipFile(context: Context, file: File, forcedId: String?): Result {
         val zf = try { ZipFile(file) } catch (e: Exception) { return Result.Failed("캐릭터 파일(.zip)을 읽을 수 없습니다.") }
         return zf.use { z ->
-            val entries = z.entries().asSequence().filter { !it.isDirectory }.toList()
+            val entries = zipEntriesWithinLimit(z)
+                ?: return Result.Failed("캐릭터 파일 구성이 너무 큽니다.")
+            val files = entries.filterNot { it.isDirectory }
             fun norm(e: ZipEntry) = e.name.replace('\\', '/')
-            val manifest = entries
+            val manifest = files
                 .filter { norm(it).substringAfterLast('/').equals("pet.json", true) && norm(it).count { c -> c == '/' } <= 1 }
                 .minByOrNull { it.name.length }
                 ?: return Result.Failed("zip 안에 pet.json이 없습니다.")
@@ -121,12 +126,24 @@ object PetImport {
             if (sheet.startsWith("/") || sheet.contains(':') || sheet.split('/').contains(".."))
                 return Result.Failed("캐릭터 이미지 경로는 pet.json 폴더 안의 상대 경로여야 합니다.")
             val prefix = norm(manifest).substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
-            val imageEntry = entries.firstOrNull { norm(it).equals(prefix + sheet, true) }
+            val imageEntry = files.firstOrNull { norm(it).equals(prefix + sheet, true) }
                 ?: return Result.Failed("zip 안에서 이미지 ‘$sheet’을(를) 찾지 못했습니다.")
             if (imageEntry.size > MAX_IMAGE) return Result.Failed("파일이 너무 큽니다 (25MB 이하).")
             val image = z.getInputStream(imageEntry).use { readLimited(it, MAX_IMAGE) }
             save(context, text, image, forcedId, extensionOf(sheet))
         }
+    }
+
+    internal fun zipEntriesWithinLimit(zip: ZipFile): List<ZipEntry>? {
+        val entries = mutableListOf<ZipEntry>()
+        val all = zip.entries()
+        while (all.hasMoreElements()) {
+            if (entries.size == MAX_ZIP_ENTRIES) return null
+            val entry = all.nextElement()
+            if (entry.name.length > MAX_ZIP_ENTRY_NAME_CHARS) return null
+            entries += entry
+        }
+        return entries
     }
 
     /** Same layout as the desktop "캐릭터 내보내기": pet.json (displayName, spritesheetPath/imagePath, spriteVersionNumber, animations) + spritesheet.<ext> (or image.<ext>). */

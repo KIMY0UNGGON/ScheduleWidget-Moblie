@@ -69,6 +69,7 @@ object FlexcilInk {
     fun parseDrawings(text: String): Parsed = parseDrawings(text) {}
 
     internal fun parseDrawings(text: String, checkActive: () -> Unit): Parsed {
+        if (!hasSafeJsonStructure(text)) return Parsed(emptyList(), 1)
         val root = runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonArray ?: return Parsed(emptyList(), 1)
         val strokes = ArrayList<NormStroke>()
         var bad = 0

@@ -30,16 +30,30 @@ internal class FlexcilArchiveWalker(
     private val countedImages = HashSet<String>()
     /** documents.list: document id (upper case, no extension) → (title, folder path). */
     private val listed = HashMap<String, Pair<String?, List<String>>>()
+    private var reportTruncated = false
 
     fun summary() {
-        report.appendLine("summary\tbooks=$books\tdocs=$docs\tfailed=$failedDocs\tstrokes=$strokes\tinkLost=$inkLost\timagePagesLost=$imagePagesLost\tlisted=${listed.size}")
+        reportLine("summary\tbooks=$books\tdocs=$docs\tfailed=$failedDocs\tstrokes=$strokes\tinkLost=$inkLost\timagePagesLost=$imagePagesLost\tlisted=${listed.size}")
+    }
+
+    internal fun reportLine(line: String) {
+        if (reportTruncated) return
+        if (report.length + line.length + 1 <= MAX_REPORT_CHARS) {
+            report.appendLine(line)
+        } else {
+            val marker = "... report truncated ...\n"
+            val room = MAX_REPORT_CHARS - report.length
+            if (room >= marker.length) report.append(line.take(room - marker.length)).append(marker)
+            else report.append(line.take(room))
+            reportTruncated = true
+        }
     }
 
     private fun recordFailure(path: String, e: Exception) {
         if (e is java.util.concurrent.CancellationException) throw e
         failedDocs++
         if (e is FlexcilArchive.PasswordProtectedPdf) passwordFailures++
-        report.appendLine("  ! $path\t${e.javaClass.simpleName}")
+        reportLine("  ! $path\t${e.javaClass.simpleName}")
     }
 
     private fun tmp(suffix: String) = File(work, "flx_${tmpSeq++}$suffix")
@@ -51,8 +65,8 @@ internal class FlexcilArchiveWalker(
             val entries = zip.entries.filter { !it.dir }
             checkActive()
             val label = if (ctx.isEmpty()) "/" else ctx.joinToString("/")
-            report.appendLine("zip\t$label\t${entries.size} entries\t${zip.kind}")
-            entries.forEach { checkActive(); report.appendLine("  ${it.name}\t${it.size}\t${it.csize}") }
+            reportLine("zip\t$label\t${entries.size} entries\t${zip.kind}")
+            entries.forEach { checkActive(); reportLine("  ${it.name}\t${it.size}\t${it.csize}") }
             if (entries.any { FlexcilArchive.isFlexcilEntry(it.name) }) flexcil = true
             val byLower = entries.associateBy { it.name.lowercase() }
 
@@ -61,7 +75,7 @@ internal class FlexcilArchiveWalker(
                 checkActive()
                 runCatching { readList(zip, e) }.onFailure {
                     if (it is java.util.concurrent.CancellationException) throw it
-                    report.appendLine("  ! documents.list: ${it.javaClass.simpleName}")
+                    reportLine("  ! documents.list: ${it.javaClass.simpleName}")
                 }
             }
 
@@ -120,6 +134,7 @@ internal class FlexcilArchiveWalker(
 
     private fun readList(zip: Zip, e: Zip.Entry) {
         val text = FlexcilArchive.inflateWithHeader(zip.readBytes(e, FlexcilArchive.MAX_JSON, checkActive), checkActive) ?: return
+        if (!hasSafeJsonStructure(text)) throw IOException("문서 목록 구조가 너무 복잡해요")
         checkActive()
         val root = FlexcilArchive.json.parseToJsonElement(text)
         fun visit(node: JsonElement, path: List<String>) {
@@ -136,7 +151,7 @@ internal class FlexcilArchiveWalker(
             }
         }
         visit(root, emptyList())
-        report.appendLine("  documents.list\t${listed.size} documents")
+        reportLine("  documents.list\t${listed.size} documents")
     }
 
     private fun readDocument(zip: Zip, entries: List<Zip.Entry>, byLower: Map<String, Zip.Entry>, root: String, ctx: List<String>, source: File) {
@@ -145,7 +160,9 @@ internal class FlexcilArchiveWalker(
         fun jsonOf(rel: String): JsonElement? = entry(rel)?.let { e ->
             checkActive()
             try {
-                FlexcilArchive.json.parseToJsonElement(String(zip.readBytes(e, FlexcilArchive.MAX_JSON, checkActive), Charsets.UTF_8))
+                val text = String(zip.readBytes(e, FlexcilArchive.MAX_JSON, checkActive), Charsets.UTF_8)
+                if (!hasSafeJsonStructure(text)) throw IOException("JSON 구조가 너무 복잡해요")
+                FlexcilArchive.json.parseToJsonElement(text)
             } catch (error: Exception) {
                 if (error is java.util.concurrent.CancellationException) throw error
                 null
@@ -155,6 +172,7 @@ internal class FlexcilArchiveWalker(
         val indexEntry = entry("pages.index")
         val index = jsonOf("pages.index") as? JsonArray
         if (restoreSink != null && indexEntry != null && index == null) throw IOException("페이지 정보를 읽을 수 없어요")
+        if (index != null && index.size > FileKind.MAX_IMPORT_PAGES) throw IOException("페이지가 너무 많아요")
         val indexedKeys = index?.mapNotNull {
             checkActive()
             (it as? JsonObject)?.str("key")?.lowercase()
@@ -226,11 +244,11 @@ internal class FlexcilArchiveWalker(
             if (rotated && ink.isNotEmpty()) { inkLost += ink.size }
             groups.getOrPut(fileKey) { ArrayList() } += Page(key, pdfIndex, rotated, if (rotated) emptyList() else ink)
         }
-        if (pagesWithoutPdf > 0) report.appendLine("  ! $root: $pagesWithoutPdf pages without a PDF background")
+        if (pagesWithoutPdf > 0) reportLine("  ! $root: $pagesWithoutPdf pages without a PDF background")
         // Ink pages that exist but no page refers to (pages.index missing / unknown): ink cannot be placed.
         if (index.isNullOrEmpty()) {
             val inkFiles = entries.count { it.name.lowercase().startsWith((root + "objects/").lowercase()) && it.name.lowercase().endsWith(".drawings") }
-            if (inkFiles > 0) { inkLost += inkFiles; report.appendLine("  ! $root: pages.index empty or unreadable, $inkFiles ink files skipped") }
+            if (inkFiles > 0) { inkLost += inkFiles; reportLine("  ! $root: pages.index empty or unreadable, $inkFiles ink files skipped") }
         }
         countUnreferencedImages(entries, root, indexedKeys)
 
@@ -266,7 +284,9 @@ internal class FlexcilArchiveWalker(
         images?.let(::countImage)
         if (shapes != null && shapes.size > 2) {
             val count = try {
-                (FlexcilArchive.json.parseToJsonElement(String(zip.readBytes(shapes, FlexcilArchive.MAX_JSON, checkActive), Charsets.UTF_8)) as? JsonArray)?.size
+                val text = String(zip.readBytes(shapes, FlexcilArchive.MAX_JSON, checkActive), Charsets.UTF_8)
+                if (!hasSafeJsonStructure(text)) throw IOException("JSON 구조가 너무 복잡해요")
+                (FlexcilArchive.json.parseToJsonElement(text) as? JsonArray)?.size
             } catch (e: Exception) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 null
@@ -281,7 +301,7 @@ internal class FlexcilArchiveWalker(
             if (it is java.util.concurrent.CancellationException) throw it
             FlexcilInk.Parsed(emptyList(), 1)
         }
-        if (parsed.unreadable > 0) report.appendLine("  ! ${drawings.name}: ${parsed.unreadable} strokes unreadable")
+        if (parsed.unreadable > 0) reportLine("  ! ${drawings.name}: ${parsed.unreadable} strokes unreadable")
         inkLost += parsed.unreadable
         return parsed.strokes
     }
@@ -299,7 +319,7 @@ internal class FlexcilArchiveWalker(
     private fun countImage(entry: Zip.Entry) {
         if (entry.size in 0L..2L || !countedImages.add(entry.name.lowercase())) return
         imagePagesLost++
-        report.appendLine("  ! ${entry.name}: image data not restored")
+        reportLine("  ! ${entry.name}: image data not restored")
     }
 
     private fun loosePdf(zip: Zip, e: Zip.Entry, ctx: List<String>) {
@@ -322,4 +342,6 @@ internal class FlexcilArchiveWalker(
             pdf.delete()
         }
     }
+
+    internal companion object { const val MAX_REPORT_CHARS = 1 shl 20 }
 }

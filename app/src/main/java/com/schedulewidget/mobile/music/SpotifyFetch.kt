@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
+import java.net.URI
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -24,6 +25,7 @@ object SpotifyFetch {
 
     private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     private val nextData = Regex("""<script id="__NEXT_DATA__" type="application/json">(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
+    private const val MAX_SHORT_LINK_BODY = 1024 * 1024
 
     /** Name, artist and (for albums / playlists) the songs of [ref]. Throws [FetchException] with a Korean reason. */
     suspend fun entity(ref: Spotify.Ref): Entity = withContext(Dispatchers.IO) {
@@ -66,10 +68,11 @@ object SpotifyFetch {
      * or null. Follows the redirects by hand so an intent:// hop does not end the lookup.
      */
     suspend fun expandShortLink(url: String): String? = withContext(Dispatchers.IO) {
-        var current = url
+        var current = Spotify.shortLink(url)?.let { runCatching { URL(it) }.getOrNull() } ?: return@withContext null
+        if (!isAllowedShortLinkUrl(current)) return@withContext null
         repeat(5) {
-            Spotify.normalize(current)?.let { return@withContext it }
-            val c = runCatching { URL(current).openConnection() as HttpURLConnection }.getOrNull() ?: return@withContext null
+            Spotify.normalize(current.toString())?.let { return@withContext it }
+            val c = runCatching { current.openConnection() as HttpURLConnection }.getOrNull() ?: return@withContext null
             try {
                 c.instanceFollowRedirects = false
                 c.connectTimeout = 10000
@@ -78,17 +81,37 @@ object SpotifyFetch {
                 val code = runCatching { c.responseCode }.getOrNull() ?: return@withContext null
                 val location = c.getHeaderField("Location")
                 if (code in 300..399 && location != null) {
-                    current = URL(URL(current), location).toString()
+                    val next = runCatching { URL(current, location) }.getOrNull() ?: return@withContext null
+                    if (!isAllowedShortLinkRedirect(next)) return@withContext null
+                    current = next
                 } else {
                     // Some short links answer with a page that names the target instead of redirecting.
-                    val body = runCatching { c.inputStream.bufferedReader().use { it.readText() } }.getOrNull().orEmpty()
+                    val body = runCatching { c.inputStream.use { readPrefix(it, MAX_SHORT_LINK_BODY) } }
+                        .getOrNull().orEmpty()
                     return@withContext Spotify.normalize(body)
                 }
             } finally {
                 c.disconnect()
             }
         }
-        Spotify.normalize(current)
+        Spotify.normalize(current.toString())
+    }
+
+    internal fun isAllowedShortLinkUrl(url: URL): Boolean =
+        runCatching { Spotify.isShortLinkUri(URI(url.toString())) }.getOrDefault(false)
+
+    internal fun isAllowedShortLinkRedirect(url: URL): Boolean =
+        runCatching { Spotify.isTrustedShortLinkRedirect(URI(url.toString())) }.getOrDefault(false)
+
+    private fun readPrefix(input: java.io.InputStream, limit: Int): String {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (out.size() < limit) {
+            val n = input.read(buffer, 0, minOf(buffer.size, limit - out.size()))
+            if (n < 0) break
+            out.write(buffer, 0, n)
+        }
+        return String(out.toByteArray(), Charsets.UTF_8)
     }
 
     private fun http(url: String): String {

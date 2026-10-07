@@ -9,9 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetAddress
+import java.net.Socket
 import java.net.ServerSocket
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -35,6 +38,8 @@ object YouTubeLogin {
     private const val SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
     private const val API = "https://www.googleapis.com/youtube/v3"
     private const val PREFS = "youtube_login"
+    private const val MAX_CALLBACK_LINE = 8192
+    private const val CALLBACK_READ_TIMEOUT_MS = 5000
     // Same encrypted client file and key as the PC app (ScheduleWidget/google_client.bin, GoogleCalendarService.DecryptClient).
     private const val CLIENT_KEY_SEED = "ScheduleWidget|google-client|v1|7f3c9a2e5d8b41f6"
 
@@ -104,8 +109,7 @@ object YouTubeLogin {
             if (System.currentTimeMillis() > deadline) error("구글 로그인이 5분 안에 끝나지 않았습니다.")
             val socket = try { server.accept() } catch (e: SocketTimeoutException) { continue }
             socket.use { s ->
-                s.soTimeout = 5000
-                val line = runCatching { s.getInputStream().bufferedReader().readLine() }.getOrNull().orEmpty()
+                val line = runCatching { readBoundedRequestLine(s) }.getOrNull().orEmpty()
                 val target = line.split(' ').getOrNull(1).orEmpty()
                 // Malformed %-escapes (stray requests) must not abort the sign-in.
                 fun dec(v: String) = runCatching { URLDecoder.decode(v, "UTF-8") }.getOrDefault(v)
@@ -130,6 +134,27 @@ object YouTubeLogin {
                 }
                 if (ours) return query["code"] ?: error(query["error"]?.let { "YouTube 로그인 실패: $it" } ?: "YouTube 로그인이 취소되었습니다.")
             }
+        }
+    }
+
+    internal fun readBoundedRequestLine(
+        socket: Socket,
+        maxBytes: Int = MAX_CALLBACK_LINE,
+        timeoutMs: Int = CALLBACK_READ_TIMEOUT_MS,
+    ): String? {
+        require(maxBytes > 0 && timeoutMs > 0)
+        val input = BufferedInputStream(socket.getInputStream())
+        val out = ByteArrayOutputStream()
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+        while (true) {
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0) return null
+            socket.soTimeout = ((remaining + 999_999L) / 1_000_000L).coerceAtLeast(1).toInt()
+            val byte = try { input.read() } catch (_: SocketTimeoutException) { return null }
+            if (byte < 0) return null
+            if (byte == '\n'.code) return out.toString(Charsets.UTF_8.name()).removeSuffix("\r")
+            if (out.size() == maxBytes) return null
+            out.write(byte)
         }
     }
 

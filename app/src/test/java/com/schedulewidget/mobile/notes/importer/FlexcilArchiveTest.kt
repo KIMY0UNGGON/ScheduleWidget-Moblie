@@ -223,6 +223,37 @@ class FlexcilArchiveTest {
         }
     }
 
+    @Test fun inflatedMetadataCannotExceedJsonLimit() {
+        val payload = ByteArray((FlexcilArchive.MAX_JSON + 1).toInt()) { 'x'.code.toByte() }
+        val deflater = Deflater()
+        val compressed = ByteArrayOutputStream()
+        try {
+            deflater.setInput(payload)
+            deflater.finish()
+            val buffer = ByteArray(8192)
+            while (!deflater.finished()) compressed.write(buffer, 0, deflater.deflate(buffer))
+        } finally {
+            deflater.end()
+        }
+        val header = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(payload.size.toLong()).array()
+        assertNull(FlexcilArchive.inflateWithHeader(header + compressed.toByteArray()))
+    }
+
+    @Test fun diagnosticReportIsCapped() {
+        val walker = FlexcilArchiveWalker(tmp.newFolder(), null, {}, {})
+        walker.reportLine("x".repeat(FlexcilArchiveWalker.MAX_REPORT_CHARS + 100))
+        walker.reportLine("ignored")
+        assertEquals(FlexcilArchiveWalker.MAX_REPORT_CHARS, walker.report.length)
+        assertTrue(walker.report.contains("report truncated"))
+        assertFalse(walker.report.endsWith("ignored\n"))
+    }
+
+    @Test fun jsonTreePreflightBoundsDepthAndNodeCount() {
+        assertFalse(hasSafeJsonStructure("[".repeat(129) + "]".repeat(129)))
+        assertFalse(hasSafeJsonStructure("[" + "0,".repeat(100_000) + "0]"))
+        assertTrue(hasSafeJsonStructure("""{"text":"[[[,,,,]]]"}"""))
+    }
+
     @Test fun looksLikeFlexcil() {
         val f = tmp.newFile()
         f.writeBytes(flx("a", listOf(page("P1", "A1", 0))))

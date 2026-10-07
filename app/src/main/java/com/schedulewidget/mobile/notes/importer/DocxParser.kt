@@ -1,6 +1,7 @@
 package com.schedulewidget.mobile.notes.importer
 
 import org.w3c.dom.Element
+import java.io.IOException
 
 // Offline DOCX reader: the document body as a flat list of blocks (paragraphs with styled runs, images, tables, page
 // breaks) with styles, numbering and the page setup resolved. Pure JVM; the renderer paginates it onto PDF pages.
@@ -225,8 +226,17 @@ class DocxReader(private val src: PartSource) {
 
     private fun table(tbl: Element, width: Float): DTable {
         var cols = tbl.path("tblGrid")?.children("gridCol")?.map { Units.twipToPt(it.intAttr("w") ?: 0) }.orEmpty()
+        if (cols.size > MAX_TABLE_COLUMNS) throw IOException("표 열이 너무 많아요")
         val rows = tbl.children("tr")
-        val maxCells = rows.maxOfOrNull { tr -> tr.children("tc").sumOf { it.path("tcPr", "gridSpan")?.intAttr("val") ?: 1 } } ?: 1
+        val maxCells = rows.maxOfOrNull { tr ->
+            var count = 0
+            for (cell in tr.children("tc")) {
+                val span = cell.path("tcPr", "gridSpan")?.intAttr("val") ?: 1
+                if (span !in 1..MAX_TABLE_COLUMNS || count > MAX_TABLE_COLUMNS - span) throw IOException("표 열이 너무 많아요")
+                count += span
+            }
+            count
+        } ?: 1
         if (cols.isEmpty() || cols.sum() <= 0f) cols = List(maxCells.coerceAtLeast(1)) { width / maxCells.coerceAtLeast(1) }
         // Wider than the text column (or pt-less grids): scale down to fit.
         val total = cols.sum()
@@ -253,5 +263,8 @@ class DocxReader(private val src: PartSource) {
         )
     }
 
-    companion object { const val DOC = "word/document.xml" }
+    companion object {
+        const val DOC = "word/document.xml"
+        private const val MAX_TABLE_COLUMNS = 256
+    }
 }

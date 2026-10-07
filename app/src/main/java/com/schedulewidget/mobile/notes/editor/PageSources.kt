@@ -5,6 +5,7 @@ import com.schedulewidget.mobile.notes.ink.PageInfo
 import com.schedulewidget.mobile.notes.render.PdfDoc
 import java.io.Closeable
 import java.io.File
+import java.nio.file.Files
 
 /** Where a page's PDF comes from and how it is rotated onto the page. */
 object PageSources {
@@ -12,6 +13,14 @@ object PageSources {
 
     /** File name (in the notebook folder) of the PDF behind [page]. */
     fun nameOf(page: PageInfo): String = page.src ?: BASE
+
+    /** A notebook-local PDF, or null for an unsafe name or symbolic link. */
+    fun fileOf(dir: File, page: PageInfo): File? {
+        val name = nameOf(page)
+        if (name.isBlank() || name == "." || name == ".." || name.any { it == '/' || it == '\\' || it == ':' || it == '\u0000' }) return null
+        if (Files.isSymbolicLink(dir.toPath())) return null
+        return File(dir, name).takeUnless { Files.isSymbolicLink(it.toPath()) }
+    }
 
     /**
      * Matrix mapping points of the source PDF page to bitmap pixels of [page] as shown ([PageInfo.w] × [PageInfo.h]
@@ -42,8 +51,8 @@ class PdfPool(private val dir: File?) : Closeable {
         val d = dir ?: return null
         val name = PageSources.nameOf(page)
         return docs.getOrPut(name) {
-            val f = File(d, name)
-            if (f.exists()) runCatching { PdfDoc(f) }.getOrNull() else null
+            val f = PageSources.fileOf(d, page)
+            if (f?.isFile == true) runCatching { PdfDoc(f) }.getOrNull() else null
         }
     }
 

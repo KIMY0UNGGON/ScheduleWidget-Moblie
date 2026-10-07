@@ -179,6 +179,8 @@ internal class DocxRenderer(private val src: PartSource, private val progress: (
 
     private fun newPage() {
         page?.let { doc.finishPage(it) }
+        page = null
+        if (pageNo >= FileKind.MAX_IMPORT_PAGES) throw IOException("문서 페이지가 너무 많아요")
         pageNo++
         progress(pageNo)
         page = doc.startPage(PdfDocument.PageInfo.Builder(setup.width.roundToInt(), setup.height.roundToInt(), pageNo).create())

@@ -12,14 +12,46 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import com.schedulewidget.mobile.notes.importer.FileKind
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 internal object NoteImportFiles {
+    // Matches FlexcilArchive's existing 1 GiB per-entry ceiling; seekable backups avoid a second cache copy.
+    const val MAX_IMPORT_BYTES = 1L shl 30
+
+    /** Copies by actual bytes read; false means the next chunk would exceed [limit]. */
+    internal fun copyLimited(input: InputStream, output: OutputStream, limit: Long, checkActive: () -> Unit = {}): Boolean {
+        require(limit >= 0)
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            checkActive()
+            val count = try { input.read(buffer) } catch (e: IOException) { checkActive(); throw e }
+            checkActive()
+            if (count < 0) return true
+            if (count == 0) {
+                val byte = try { input.read() } catch (e: IOException) { checkActive(); throw e }
+                checkActive()
+                if (byte < 0) return true
+                if (total == limit) return false
+                output.write(byte)
+                total++
+                continue
+            }
+            if (count.toLong() > limit - total) return false
+            output.write(buffer, 0, count)
+            total += count
+        }
+    }
+
     /** Throws a user-facing error unless [pdf] opens with PdfRenderer and has pages. */
     fun checkPdf(pdf: File) {
+        if (pdf.length() > MAX_IMPORT_BYTES) throw NoteImport.ImportError("파일이 1GB보다 커서 가져오지 못했어요")
         val pages = try {
             val fd = ParcelFileDescriptor.open(pdf, ParcelFileDescriptor.MODE_READ_ONLY)
             val renderer = try { PdfRenderer(fd) } catch (e: Throwable) { fd.close(); throw e }
@@ -30,6 +62,7 @@ internal object NoteImportFiles {
             throw NoteImport.ImportError("PDF 파일이 손상되어 열 수 없어요")
         }
         if (pages <= 0) throw NoteImport.ImportError("페이지가 없는 PDF예요")
+        if (pages > FileKind.MAX_IMPORT_PAGES) throw NoteImport.ImportError("PDF 페이지가 너무 많아요 (최대 ${FileKind.MAX_IMPORT_PAGES}쪽)")
     }
 
     /** One page whose size follows the photo (long edge = A4 long edge), EXIF rotation applied. */

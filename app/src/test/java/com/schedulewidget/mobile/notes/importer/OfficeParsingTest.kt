@@ -2,10 +2,14 @@ package com.schedulewidget.mobile.notes.importer
 
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class OfficeParsingTest {
@@ -275,5 +279,49 @@ class OfficeParsingTest {
         val bytes = byteArrayOf(1, 2, 3)
         assertArrayEquals(bytes, readLimited(ByteArrayInputStream(bytes), bytes.size.toLong()))
         assertNull(readLimited(ByteArrayInputStream(bytes), (bytes.size - 1).toLong()))
+    }
+
+    @Test fun ooxmlRejectsDtdDepthNodeAndByteBombs() {
+        assertThrows(org.xml.sax.SAXException::class.java) {
+            Ooxml.parse("<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///etc/passwd'>]><x>&e;</x>".toByteArray())
+        }
+        assertEquals("<!DOCTYPE x>", Ooxml.parse("<x><!-- <!DOCTYPE y> --><![CDATA[<!DOCTYPE x>]]></x>".toByteArray()).textContent)
+        val deep = "<x>".repeat(Ooxml.MAX_XML_DEPTH + 1) + "</x>".repeat(Ooxml.MAX_XML_DEPTH + 1)
+        assertThrows(org.xml.sax.SAXException::class.java) { Ooxml.parse(deep.toByteArray()) }
+        val flat = "<x>" + "<y/>".repeat(Ooxml.MAX_XML_NODES) + "</x>"
+        assertThrows(org.xml.sax.SAXException::class.java) { Ooxml.parse(flat.toByteArray()) }
+        assertThrows(IOException::class.java) { Ooxml.parse(ByteArray(Ooxml.MAX_XML_BYTES + 1)) }
+    }
+
+    @Test fun zipPartSourceBoundsXmlBeforeDomParsing() {
+        val file = Files.createTempFile("office-xml-limit", ".zip").toFile()
+        try {
+            ZipOutputStream(file.outputStream()).use { zip ->
+                zip.putNextEntry(ZipEntry("word/document.xml"))
+                zip.write(ByteArray(Ooxml.MAX_XML_BYTES + 1))
+                zip.closeEntry()
+            }
+            ZipPartSource(file).use { assertNull(it.read("word/document.xml")) }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test fun pptxRejectsTooManySlidesBeforeRendering() {
+        val count = FileKind.MAX_IMPORT_PAGES + 1
+        val slides = (1..count).joinToString("") { "<p:sldId id=\"$it\" r:id=\"r$it\"/>" }
+        val relationships = (1..count).joinToString("") {
+            "<Relationship Id=\"r$it\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide\" Target=\"slides/s$it.xml\"/>"
+        }
+        val src = parts(
+            "ppt/presentation.xml" to "<p:presentation xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" xmlns:r=\"${Ooxml.NS_R}\"><p:sldIdLst>$slides</p:sldIdLst></p:presentation>",
+            "ppt/_rels/presentation.xml.rels" to "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">$relationships</Relationships>",
+        )
+        assertThrows(IOException::class.java) { PptxReader(src) }
+    }
+
+    @Test fun docxRejectsOversizedGridSpanBeforeAllocatingColumns() {
+        val doc = """<w:document $nsW><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2147483647"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl></w:body></w:document>"""
+        assertThrows(IOException::class.java) { DocxReader(parts("word/document.xml" to doc)).read() }
     }
 }

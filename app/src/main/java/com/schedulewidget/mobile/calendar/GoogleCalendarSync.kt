@@ -14,6 +14,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.android.gms.auth.GoogleAuthUtil
+import com.schedulewidget.mobile.data.AppData
 import com.schedulewidget.mobile.data.Repository
 import com.schedulewidget.mobile.data.ScheduleItem
 import kotlinx.coroutines.CancellationException
@@ -26,6 +27,28 @@ import java.io.IOException
 import java.time.DateTimeException
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
+
+/** Unknown saved account identity means its event IDs cannot safely be used against the signed-in primary calendar. */
+internal fun forGoogleCalendarAccount(snapshot: AppData, account: String): AppData {
+    val settings = snapshot.googleCalendar
+    val hasPriorLinks = settings.syncedEventIds.isNotEmpty() || settings.ownedEventIds.isNotEmpty() || settings.hiddenEvents.isNotEmpty() ||
+        snapshot.schedules.any {
+            it.googleEventId != null || it.googleSyncedHash != null || it.googleSyncedPeriod != null ||
+                it.googleEndMinutes != null || it.googleRefusedHash != null
+        }
+    if (!settings.account.isNullOrBlank() || !hasPriorLinks) return snapshot
+    return snapshot.copy(
+        schedules = snapshot.schedules.map {
+            it.copy(
+                googleEventId = null, googleSyncedHash = null, googleSyncedPeriod = null,
+                googleEndMinutes = null, googleRefusedHash = null,
+            )
+        },
+        googleCalendar = settings.copy(
+            account = account, syncedEventIds = emptyList(), ownedEventIds = emptyList(), hiddenEvents = emptyMap(),
+        ),
+    )
+}
 
 /**
  * 구글 캘린더 양방향 연동 — the same sync the PC app does: the app's schedules and the signed-in account's primary Google
@@ -250,12 +273,12 @@ object GoogleCalendarSync {
         // Event ids and delete ownership are account-specific. Never plan a sync against the primary calendar if its
         // identity could not be read: treating an unknown account as the last account can patch/delete that account's
         // events using links saved for a different Google account.
-        val account = get(token, "https://www.googleapis.com/calendar/v3/calendars/primary?fields=id")
+        val account = get(token, "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary?fields=id")
             .optString("id")
             .ifBlank { throw IllegalStateException("구글 기본 캘린더 계정을 확인하지 못해 동기화를 중단했습니다.") }
         val today = LocalDate.now()
         val remote = readEvents(token, today)
-        val plan = GoogleCalendarPlanner.plan(snapshot, account, today, remote)
+        val plan = GoogleCalendarPlanner.plan(forGoogleCalendarAccount(snapshot, account), account, today, remote)
         ensureNoImport()
         val local = plan.local
         val syncedIds = plan.syncedIds

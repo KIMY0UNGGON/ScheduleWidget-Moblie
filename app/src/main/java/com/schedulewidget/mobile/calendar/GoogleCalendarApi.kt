@@ -22,6 +22,7 @@ internal data class CalendarRemote(
 
 internal object GoogleCalendarApi {
     internal const val EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+    private const val API_HOST = "www.googleapis.com"
     // Request only fields consumed by this sync; don't fetch descriptions, locations, conference details or attendee emails.
     private const val EVENT_FIELDS =
         "nextPageToken,items(id,status,start(date,dateTime),end(date,dateTime),summary," +
@@ -114,7 +115,12 @@ internal object GoogleCalendarApi {
     internal fun get(token: String, url: String) = request(token, "GET", url, null, allowMissing = false)!!
 
     internal fun request(token: String, method: String, url: String, body: JSONObject?, allowMissing: Boolean): JSONObject? {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val endpoint = URL(url)
+        require(endpoint.protocol == "https" && endpoint.host == API_HOST && endpoint.userInfo == null && endpoint.port in listOf(-1, 443)) {
+            "허용되지 않은 구글 캘린더 주소입니다."
+        }
+        val conn = endpoint.openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = false
         // HttpURLConnection has no PATCH: use the override header Google APIs accept.
         if (method == "PATCH") { conn.requestMethod = "POST"; conn.setRequestProperty("X-HTTP-Method-Override", "PATCH") }
         else conn.requestMethod = method
@@ -157,7 +163,7 @@ internal object GoogleCalendarApi {
             throw IllegalStateException("구글 요청 한도에 걸렸습니다. 잠시 쉬었다가 다시 동기화합니다.")
         if (code == 403) {
             if (has("ACCESS_TOKEN_SCOPE_INSUFFICIENT", "insufficientScopes") || text.contains("insufficient authentication scopes", ignoreCase = true))
-                throw IllegalStateException("구글 캘린더 권한이 없습니다. ‘연결 해제’ 후 다시 켜고 일정 및 기본 캘린더 정보 권한을 허용해 주세요.")
+                throw IllegalStateException("구글 캘린더 권한이 없습니다. ‘연결 해제’ 후 다시 켜고 일정 및 기본 캘린더 확인 권한을 허용해 주세요.")
             if (text.contains("accessNotConfigured", ignoreCase = true) || text.contains("SERVICE_DISABLED"))
                 throw IllegalStateException("구글 캘린더를 사용할 수 없습니다: Cloud 프로젝트에서 Google Calendar API 사용 설정이 필요합니다.")
         }

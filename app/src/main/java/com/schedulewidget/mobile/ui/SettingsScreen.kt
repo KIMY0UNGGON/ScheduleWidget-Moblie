@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.schedulewidget.mobile.data.AppData
 import com.schedulewidget.mobile.data.Repository
+import com.schedulewidget.mobile.data.readDesktopJson
 import com.schedulewidget.mobile.reminders.ReminderSettingsCard
 import com.schedulewidget.mobile.record.RecordSettingsCard
 import androidx.compose.material.icons.outlined.RestartAlt
@@ -100,7 +101,8 @@ fun SettingsScreen(onBack: () -> Unit, navigate: (Route) -> Unit) {
         scope.launch {
             val message = withContext(Dispatchers.IO) {
                 runCatching {
-                    val text = context.contentResolver.openInputStream(uri)!!.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val text = context.contentResolver.openInputStream(uri)?.use { readDesktopJson(it) }
+                        ?: error("일정 파일을 읽을 수 없거나 16MB보다 커요")
                     repo.importDesktopJson(text).getOrThrow()
                 }.fold(
                     onSuccess = { d ->
@@ -111,7 +113,7 @@ fun SettingsScreen(onBack: () -> Unit, navigate: (Route) -> Unit) {
                             if (relink > 0) append("\nPC 경로 곡 ${relink}개는 다시 연결해야 재생됩니다")
                         }
                     },
-                    onFailure = { "가져오기 실패: schedules.json 형식이 아닙니다" },
+                    onFailure = { "가져오기 실패: schedules.json 형식과 파일 크기(16MB 이하)를 확인해 주세요" },
                 )
             }
             snackbar.showSnackbar(message)

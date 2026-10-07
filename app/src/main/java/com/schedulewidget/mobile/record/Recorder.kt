@@ -54,22 +54,22 @@ object Recorder {
      * Starts recording. Without the microphone permission a small transparent activity asks for it first (and starts
      * recording once granted). Already recording: just says so.
      */
-    fun start(context: Context) {
+    fun start(context: Context, noteId: String? = null) {
         if (!enabled(context)) return
         if (isRecording) {
             Toast.makeText(context.applicationContext, "녹음 중이에요", Toast.LENGTH_SHORT).show()
             return
         }
         if (!hasPermission(context)) {
-            RecordPermissionActivity.launch(context)
+            RecordPermissionActivity.launch(context, noteId)
             return
         }
         val fromActivity = context is Activity
-        runCatching { ContextCompat.startForegroundService(context, RecordService.startIntent(context, fromActivity)) }
+        runCatching { ContextCompat.startForegroundService(context, RecordService.startIntent(context, fromActivity, noteId)) }
             .onFailure {
                 // e.g. ForegroundServiceStartNotAllowedException: start it from a (briefly) visible activity instead.
                 if (fromActivity) Toast.makeText(context.applicationContext, "녹음을 시작할 수 없어요", Toast.LENGTH_SHORT).show()
-                else RecordPermissionActivity.launch(context)
+                else RecordPermissionActivity.launch(context, noteId)
             }
     }
 

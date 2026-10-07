@@ -2,6 +2,7 @@ package com.schedulewidget.mobile.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.net.URI
 import java.util.UUID
 
 @Serializable
@@ -50,7 +51,9 @@ object Spotify {
     private val webPattern =
         Regex("""open\.spotify\.com/(?:intl-[A-Za-z-]+/)?(?:embed/)?($TYPES)/([A-Za-z0-9]{22})""", RegexOption.IGNORE_CASE)
     private val uriPattern = Regex("""spotify:($TYPES):([A-Za-z0-9]{22})""")
-    private val shortPattern = Regex("""https?://(?:spotify\.link|spotify\.app\.link)/[^\s]+""", RegexOption.IGNORE_CASE)
+    private val shortPattern = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE)
+    private val shortHosts = setOf("spotify.link", "spotify.app.link")
+    private val redirectHosts = shortHosts + "open.spotify.com"
 
     /** The first Spotify link / URI inside [text] (share texts may contain more words), or null. */
     fun parse(text: String): Ref? =
@@ -60,7 +63,20 @@ object Spotify {
     fun normalize(text: String): String? = parse(text)?.url
 
     /** A spotify.link short link in [text] (the Spotify app shares these); needs SpotifyFetch.expandShortLink. */
-    fun shortLink(text: String): String? = shortPattern.find(text)?.value?.trimEnd('.', ',', ')', '"', '\'')
+    fun shortLink(text: String): String? = shortPattern.findAll(text).firstNotNullOfOrNull { match ->
+        val candidate = match.value.trimEnd('.', ',', ')', '"', '\'')
+        runCatching { URI(candidate) }.getOrNull()?.takeIf(::isShortLinkUri)?.toString()
+    }
+
+    internal fun isShortLinkUri(uri: URI): Boolean {
+        val host = uri.host?.lowercase() ?: return false
+        return uri.scheme.equals("https", true) && uri.userInfo == null && uri.port == -1 && host in shortHosts
+    }
+
+    internal fun isTrustedShortLinkRedirect(uri: URI): Boolean {
+        val host = uri.host?.lowercase() ?: return false
+        return uri.scheme.equals("https", true) && uri.userInfo == null && uri.port == -1 && host in redirectHosts
+    }
 }
 
 /** Links a playlist can hold besides files: YouTube / YouTube Music and Spotify. */

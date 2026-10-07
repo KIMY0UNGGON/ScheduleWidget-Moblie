@@ -1,6 +1,7 @@
 package com.schedulewidget.mobile.data
 
 import android.content.Context
+import com.schedulewidget.mobile.notes.importer.readLimited
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,10 +17,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
+
+/** Bound external schedule files before allocating their JSON text or changing the current data. */
+internal fun readDesktopJson(input: InputStream, limit: Long = 16L * 1024 * 1024): String? =
+    readLimited(input, limit)?.let { String(it, Charsets.UTF_8) }
 
 /** Serializes a desktop import against late Google sync commits without holding a lock during network calls. */
 internal class ImportEpoch {

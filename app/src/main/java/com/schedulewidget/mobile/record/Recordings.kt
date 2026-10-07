@@ -10,7 +10,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -24,15 +30,28 @@ data class RecordingMeta(
     val durationMs: Long = 0,
     /** Audio file name in the recordings folder. */
     val file: String,
+    /** Notebook opened when this recording started; null for ordinary recordings. */
+    val noteId: String? = null,
 )
 
 data class RecordingItem(val meta: RecordingMeta, val audio: File, val sizeBytes: Long) {
     val id: String get() = meta.id
 }
 
+internal fun recordingMetaFile(directory: File, id: String): File? =
+    if (isSafeRecordingId(id)) File(directory, "$id.json") else null
+
+internal fun RecordingMeta.matchesAudio(audio: File): Boolean =
+    isSafeRecordingId(id) && id == audio.nameWithoutExtension && file == audio.name &&
+        (noteId == null || isSafeRecordingId(noteId))
+
+private fun isSafeRecordingId(id: String): Boolean =
+    id.isNotBlank() && id != "." && id != ".." && id.none { it == '/' || it == '\\' || it == ':' || it == '\u0000' }
+
 /** Lecture recordings on disk: app-specific external storage (no permission needed), or internal storage without it. */
 object Recordings {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private const val MAX_META_BYTES = 64 * 1024L
     private val _changes = MutableStateFlow(0)
     /** Bumped after every add / rename / delete so lists reload. */
     val changes: StateFlow<Int> = _changes
@@ -40,7 +59,11 @@ object Recordings {
     fun notifyChanged() { _changes.value++ }
 
     fun dir(context: Context): File =
-        (context.getExternalFilesDir("recordings") ?: File(context.filesDir, "recordings")).apply { mkdirs() }
+        (context.getExternalFilesDir("recordings") ?: File(context.filesDir, "recordings")).apply {
+            if (Files.isSymbolicLink(toPath())) throw IOException("녹음 저장 경로가 올바르지 않아요")
+            mkdirs()
+            if (!isDirectory || Files.isSymbolicLink(toPath())) throw IOException("녹음 저장 경로가 올바르지 않아요")
+        }
 
     /** "수업_2026-10-01_14-30.m4a", with "_2", "_3"... when a recording already started in the same minute. */
     fun newFile(context: Context, now: Long): File {
@@ -60,22 +83,48 @@ object Recordings {
 
     private fun metaFile(audio: File) = File(audio.parentFile, audio.nameWithoutExtension + ".json")
 
+    @Synchronized
     fun save(context: Context, meta: RecordingMeta) {
-        val f = File(dir(context), meta.id + ".json")
+        val directory = runCatching { dir(context) }.getOrNull() ?: return
+        val f = recordingMetaFile(directory, meta.id) ?: return
         runCatching {
-            val tmp = File(f.parentFile, f.name + ".tmp")
-            tmp.writeText(json.encodeToString(RecordingMeta.serializer(), meta))
-            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+            val tmp = Files.createTempFile(directory.toPath(), "${f.name}.", ".tmp")
+            try {
+                FileOutputStream(tmp.toFile()).use { out ->
+                    out.write(json.encodeToString(RecordingMeta.serializer(), meta).toByteArray(Charsets.UTF_8))
+                    out.fd.sync()
+                }
+                Files.move(tmp, f.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } finally {
+                Files.deleteIfExists(tmp)
+            }
         }
     }
 
-    private fun readMeta(audio: File): RecordingMeta? = runCatching {
-        json.decodeFromString(RecordingMeta.serializer(), metaFile(audio).readText())
-    }.getOrNull()
+    private fun readMeta(audio: File): RecordingMeta? {
+        val sidecar = metaFile(audio)
+        if (Files.isSymbolicLink(sidecar.toPath()) || sidecar.length() !in 1L..MAX_META_BYTES) return null
+        return runCatching {
+            val bytes = Files.newInputStream(sidecar.toPath(), LinkOption.NOFOLLOW_LINKS).use { input ->
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(8 * 1024)
+                var total = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > MAX_META_BYTES) throw IOException("녹음 정보가 너무 커요")
+                    out.write(buffer, 0, count)
+                }
+                out.toByteArray()
+            }
+            json.decodeFromString(RecordingMeta.serializer(), String(bytes, Charsets.UTF_8)).takeIf { it.matchesAudio(audio) }
+        }.getOrNull()
+    }
 
     /** All recordings, newest first. Files without a sidecar (or with an unknown length) get one made up. Slow: IO. */
     fun list(context: Context, skipId: String? = null): List<RecordingItem> =
-        dir(context).listFiles { f -> f.isFile && f.extension.equals("m4a", ignoreCase = true) }.orEmpty()
+        dir(context).listFiles { f -> !Files.isSymbolicLink(f.toPath()) && f.isFile && f.extension.equals("m4a", ignoreCase = true) }.orEmpty()
             .filter { it.nameWithoutExtension != skipId }
             .map { audio ->
                 var meta = readMeta(audio) ?: RecordingMeta(

@@ -5,10 +5,12 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import com.schedulewidget.mobile.notes.importer.FileKind
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 
 /**
@@ -30,8 +32,12 @@ class PdfDoc(file: File) : Closeable {
     val pageCount: Int get() = renderer.pageCount
 
     /** Page sizes in PDF points. */
-    fun pageSizes(): List<Pair<Float, Float>> = (0 until pageCount).map { i ->
-        renderer.openPage(i).use { p -> p.width.toFloat() to p.height.toFloat() }
+    fun pageSizes(): List<Pair<Float, Float>> {
+        val count = pageCount
+        checkPdfPageCount(count)
+        return (0 until count).map { i ->
+            renderer.openPage(i).use { p -> p.width.toFloat() to p.height.toFloat() }
+        }
     }
 
     /**
@@ -50,4 +56,8 @@ class PdfDoc(file: File) : Closeable {
         runCatching { renderer.close() }
         runCatching { fd.close() }
     }
+}
+
+internal fun checkPdfPageCount(count: Int) {
+    if (count > FileKind.MAX_IMPORT_PAGES) throw IOException("PDF 페이지가 너무 많아요")
 }

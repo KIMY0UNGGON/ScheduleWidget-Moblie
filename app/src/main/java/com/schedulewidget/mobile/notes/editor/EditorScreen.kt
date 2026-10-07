@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -65,6 +67,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -85,6 +89,7 @@ import com.schedulewidget.mobile.record.PlayerControls
 import com.schedulewidget.mobile.record.Recorder
 import com.schedulewidget.mobile.record.RecordingItem
 import com.schedulewidget.mobile.record.Recordings
+import com.schedulewidget.mobile.record.RecordingsScreen
 import com.schedulewidget.mobile.record.rememberRecordingPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -203,6 +208,22 @@ private fun EditorContent(
     var playing by remember { mutableStateOf<RecordingItem?>(null) }
     var saving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
+    val recordingVersion by Recordings.changes.collectAsStateWithLifecycle()
+    val inkRecordingIds = remember(st.note.pages, st.inkVersion) {
+        linkedRecordingIds(st.note, st.note.pages.associate { it.uid to st.inkOf(it.uid) })
+    }
+    val recordingCount by produceState(0, recordingVersion, st.note.pages, st.inkVersion) {
+        val currentNote = st.note
+        val ids = linkedRecordingIds(currentNote, currentNote.pages.associate { it.uid to st.inkOf(it.uid) })
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                Recordings.list(context, skipId = Recorder.state.value.id).count {
+                    recordingBelongsToNote(it.id, it.meta.noteId, currentNote.id, ids)
+                }
+            }.getOrDefault(0)
+        }
+    }
+    var showNoteRecordings by remember { mutableStateOf(false) }
     LaunchedEffect(st) {
         st.onMessage = { toast(context, it) }
         st.onSaveError = { saveFailed = true }
@@ -336,6 +357,8 @@ private fun EditorContent(
                 fingerDraws = settings.notes.fingerDraws,
                 onFingerDraws = setFingerDraws,
                 onImmersive = { immersive = true },
+                recordingCount = recordingCount,
+                onRecordings = { showNoteRecordings = true },
             )
         }
         if (saveFailed) Row(
@@ -449,6 +472,19 @@ private fun EditorContent(
         title = if (saving) "저장하는 중…" else "PDF 만드는 중…",
         message = if (saving) "편집 내용을 저장하고 있어요" else "페이지가 많으면 시간이 걸려요",
     )
+    if (showNoteRecordings) Dialog(
+        onDismissRequest = { showNoteRecordings = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            RecordingsScreen(
+                onBack = { showNoteRecordings = false },
+                noteId = st.noteId,
+                inkRecordingIds = inkRecordingIds,
+                onStartRecording = { Recorder.start(context, st.noteId) },
+            )
+        }
+    }
 }
 
 /** Clean bar on canvas: back, title (tap to rename), then undo / redo, record, pages and the ⋮ menu as icon pills. */

@@ -6,6 +6,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 /** Transcripts on disk: filesDir/transcripts/<ascii-safe id>-<8 hex of SHA-1(id)>.json. */
 internal object TranscriptStore {
@@ -46,7 +50,7 @@ internal object TranscriptStore {
     private fun legacyFile(context: Context, recordingId: String): File =
         File(SttPaths.transcripts(context), safe(recordingId) + ".json")
 
-    // The engine and the editor may both write; one writer at a time keeps the .tmp file private.
+    // The engine and editor may both write; serialize their updates and atomically replace the JSON file.
     @Synchronized
     fun save(context: Context, t: Transcript) {
         val dto = TranscriptDto(
@@ -55,13 +59,7 @@ internal object TranscriptStore {
             speakerNames = t.speakerNames, editedAt = t.editedAt,
         )
         val target = file(context, t.recordingId)
-        target.parentFile?.mkdirs()
-        val tmp = File(target.path + ".tmp")
-        tmp.writeText(json.encodeToString(TranscriptDto.serializer(), dto))
-        if (!tmp.renameTo(target)) {
-            target.delete()
-            if (!tmp.renameTo(target)) throw java.io.IOException("could not write ${target.name}")
-        }
+        writeTranscriptAtomically(target, json.encodeToString(TranscriptDto.serializer(), dto).toByteArray(Charsets.UTF_8))
     }
 
     fun load(context: Context, recordingId: String): Transcript? {
@@ -85,5 +83,26 @@ internal object TranscriptStore {
         file(context, recordingId).delete()
         val legacy = legacyFile(context, recordingId)
         if (legacy.isFile && load(context, recordingId) != null && !file(context, recordingId).isFile) legacy.delete()
+    }
+}
+
+internal fun writeTranscriptAtomically(
+    target: File,
+    contents: ByteArray,
+    replace: (Path, Path) -> Unit = { source, destination ->
+        Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    },
+) {
+    val directory = requireNotNull(target.absoluteFile.parentFile).toPath()
+    Files.createDirectories(directory)
+    val temp = Files.createTempFile(directory, ".transcript-", ".tmp")
+    try {
+        FileOutputStream(temp.toFile()).use { output ->
+            output.write(contents)
+            output.fd.sync()
+        }
+        replace(temp, target.toPath())
+    } finally {
+        Files.deleteIfExists(temp)
     }
 }

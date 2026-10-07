@@ -34,9 +34,10 @@ internal object ModelStore {
 
     fun isReady(context: Context, pkg: ModelPackage): Boolean {
         val dir = pkg.dir(context)
-        val filesOk = pkg.files.all { f -> File(dir, f.name).let { it.isFile && it.length() >= f.bytes / 2 } }
+        if (!hasVerifiedPackage(dir, pkg)) return false
+        val filesOk = pkg.files.all { f -> File(dir, f.name).let { it.isFile && it.length() == f.bytes } }
         val archiveOk = pkg.archive?.let { a ->
-            File(dir, COMPLETE_MARKER).isFile && a.required.all { (path, min) -> File(dir, path).let { it.isFile && it.length() >= min } }
+            a.required.all { (path, min) -> File(dir, path).let { it.isFile && it.length() >= min } }
         } ?: true
         return filesOk && archiveOk
     }
@@ -155,7 +156,9 @@ internal object ModelStore {
             if (isReady(app, pkg)) continue
             val dir = pkg.dir(app)
             for (f in pkg.files) {
-                if (!File(dir, f.name).isFile) needed += f.bytes - File(dir, f.name + ".part").length()
+                val downloaded = File(dir, f.name)
+                val present = if (downloaded.isFile) downloaded.length() else File(dir, f.name + ".part").length()
+                needed += (f.bytes - present).coerceAtLeast(0)
             }
             pkg.archive?.let { a -> needed += archiveSpaceNeeded(dir, archiveName(a), a) }
         }
@@ -181,30 +184,41 @@ internal object ModelStore {
     private suspend fun fetchPackage(app: Context, pkg: ModelPackage, onProgress: (Long) -> Unit) {
         if (isReady(app, pkg)) { onProgress(pkg.downloadBytes()); return }
         val dir = pkg.dir(app).apply { mkdirs() }
+        File(dir, COMPLETE_MARKER).delete()
         var before = 0L
         for (f in pkg.files) {
             val base = before
-            Downloader.fetch(f.url, File(dir, f.name), f.bytes) { onProgress(base + it) }
+            Downloader.fetch(f.url, File(dir, f.name), f.bytes, f.sha256) { onProgress(base + it) }
             before += f.bytes
         }
-        val a = pkg.archive ?: return
-        if (File(dir, COMPLETE_MARKER).isFile && isReady(app, pkg)) return
-        File(dir, COMPLETE_MARKER).delete()
-        val archive = File(dir, archiveName(a))
-        val base = before
-        Downloader.fetch(a.url, archive, a.archiveBytes) { onProgress(base + it) }
-        // Unpacking the big Qwen3 archive takes a while; the progress bar sits at 100% meanwhile.
-        Downloader.extractTarBz2(archive, dir, a.keep) {}
-        archive.delete()
-        val missing = a.required.filter { (path, min) -> File(dir, path).let { !it.isFile || it.length() < min } }
-        if (missing.isNotEmpty()) throw DownloadException("압축 파일에 필요한 파일이 없어요: ${missing.keys.joinToString()}")
-        File(dir, COMPLETE_MARKER).writeText(System.currentTimeMillis().toString())
+        pkg.archive?.let { a ->
+            val archive = File(dir, archiveName(a))
+            val base = before
+            Downloader.fetch(a.url, archive, a.archiveBytes, a.sha256) { onProgress(base + it) }
+            // The catalog's extracted size is an estimate; allow headroom for the kept files.
+            Downloader.extractTarBz2(archive, dir, a.keep, a.extractedBytes * 2 + 16L * 1024 * 1024) {}
+            archive.delete()
+            val missing = a.required.filter { (path, min) -> File(dir, path).let { !it.isFile || it.length() < min } }
+            if (missing.isNotEmpty()) throw DownloadException("압축 파일에 필요한 파일이 없어요: ${missing.keys.joinToString()}")
+        }
+        File(dir, COMPLETE_MARKER).writeText(packageVerification(pkg))
     }
+}
+
+internal fun packageVerification(pkg: ModelPackage): String =
+    (pkg.files.map { "${it.name}:${it.bytes}:${it.sha256}" } + listOfNotNull(pkg.archive?.sha256)).joinToString("\n")
+
+/** Legacy size-only downloads must pass a hash check once, before this private marker is written. */
+internal fun hasVerifiedPackage(dir: File, pkg: ModelPackage): Boolean {
+    val expected = packageVerification(pkg)
+    val marker = File(dir, ".complete")
+    return marker.isFile && marker.length() == expected.toByteArray(Charsets.UTF_8).size.toLong() &&
+        runCatching { marker.readText() == expected }.getOrDefault(false)
 }
 
 internal fun archiveSpaceNeeded(dir: File, name: String, archive: RemoteArchive): Long {
     val downloaded = File(dir, name)
-    val downloadBytes = if (downloaded.isFile && downloaded.length() > 0) 0L
-    else (archive.archiveBytes - File(dir, "$name.part").length()).coerceAtLeast(0)
+    val present = if (downloaded.isFile) downloaded.length() else File(dir, "$name.part").length()
+    val downloadBytes = (archive.archiveBytes - present).coerceAtLeast(0)
     return downloadBytes + archive.extractedBytes
 }

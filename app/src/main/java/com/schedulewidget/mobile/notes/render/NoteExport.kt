@@ -88,8 +88,8 @@ object NoteExport {
         bmp.eraseColor(Color.WHITE)
         if (page.isPdf && basePdf != null) {
             // [basePdf]'s folder holds the page's own source file (PageInfo.src); rotation as in the editor.
-            val f = File(basePdf.parentFile, com.schedulewidget.mobile.notes.editor.PageSources.nameOf(page))
-            if (f.exists()) runCatching { PdfDoc(f).use { it.render(page.pdf, bmp, com.schedulewidget.mobile.notes.editor.PageSources.pdfMatrix(page, scale, scale)) } }
+            val f = basePdf.parentFile?.let { com.schedulewidget.mobile.notes.editor.PageSources.fileOf(it, page) }
+            if (f?.isFile == true) runCatching { PdfDoc(f).use { it.render(page.pdf, bmp, com.schedulewidget.mobile.notes.editor.PageSources.pdfMatrix(page, scale, scale)) } }
         }
         val c = Canvas(bmp)
         c.scale(scale, scale)

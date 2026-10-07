@@ -12,6 +12,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.schedulewidget.mobile.notes.NoteStore
 import com.schedulewidget.mobile.notes.NoteImport
+import com.schedulewidget.mobile.notes.NoteImportFiles
 import com.schedulewidget.mobile.data.Repository
 import com.schedulewidget.mobile.privacy.GoogleDocumentConsent
 import com.schedulewidget.mobile.notes.importer.DocxRenderer
@@ -27,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -47,6 +49,7 @@ internal object PageImport {
     /** Copies [uri] into notebook [noteId] as a page source, converting it to PDF first when needed. */
     suspend fun prepare(context: Context, noteId: String, uri: Uri, stage: (String) -> Unit): Ready {
         val app = context.applicationContext
+        val importJob = currentCoroutineContext().job
         val work = withContext(Dispatchers.IO) { workDir(app) }
         try {
             stage("파일 읽는 중")
@@ -54,7 +57,11 @@ internal object PageImport {
             val input = File(work, "input")
             val head = withContext(Dispatchers.IO) {
                 (app.contentResolver.openInputStream(uri) ?: throw IOException("파일을 열 수 없어요")).use { src ->
-                    input.outputStream().use { src.copyTo(it, 64 * 1024) }
+                    input.outputStream().use { out ->
+                        if (!NoteImportFiles.copyLimited(src, out, NoteImportFiles.MAX_IMPORT_BYTES) { importJob.ensureActive() }) {
+                            throw IOException("파일이 1GB보다 커서 넣지 못했어요")
+                        }
+                    }
                 }
                 if (input.length() == 0L) throw IOException("빈 파일이에요")
                 input.inputStream().use { s -> ByteArray(1024).let { b -> val n = s.read(b); if (n <= 0) ByteArray(0) else b.copyOf(n) } }
@@ -94,16 +101,24 @@ internal object PageImport {
 
     /** Photos [uris] as one page each (in that order), stored as a page source of notebook [noteId]. */
     suspend fun prepareImages(context: Context, noteId: String, uris: List<Uri>, stage: (String) -> Unit): Ready {
+        if (uris.size > FileKind.MAX_IMPORT_PAGES) throw IOException("사진이 너무 많아요 (최대 ${FileKind.MAX_IMPORT_PAGES}장)")
         val app = context.applicationContext
+        val importJob = currentCoroutineContext().job
         val work = withContext(Dispatchers.IO) { workDir(app) }
         try {
+            var totalBytes = 0L
             val files = uris.mapIndexed { i, uri ->
                 stage("사진 읽는 중 (${i + 1}/${uris.size})")
                 withContext(Dispatchers.IO) {
                     File(work, "img$i").also { f ->
                         (app.contentResolver.openInputStream(uri) ?: throw IOException("사진을 열 수 없어요")).use { s ->
-                            f.outputStream().use { s.copyTo(it, 64 * 1024) }
+                            f.outputStream().use { out ->
+                                if (!NoteImportFiles.copyLimited(s, out, NoteImportFiles.MAX_IMPORT_BYTES - totalBytes) { importJob.ensureActive() }) {
+                                    throw IOException("사진 묶음이 1GB보다 커서 넣지 못했어요")
+                                }
+                            }
                         }
+                        totalBytes += f.length()
                     }
                 }
             }

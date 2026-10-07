@@ -7,6 +7,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /** Coalesced background rendering of notebook library thumbnails. */
 internal object NoteStoreThumbnail {
@@ -58,10 +60,14 @@ internal object NoteStoreThumbnail {
         }.getOrNull() ?: return
         val file = NoteStoreFileIO.thumbFile(context, id)
         if (!NoteStore.dir(context, id).exists()) return
-        val tmp = File(file.parentFile, file.name + ".tmp")
         runCatching {
-            FileOutputStream(tmp).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+            val tmp = Files.createTempFile(file.parentFile.toPath(), "${file.name}.", ".tmp")
+            try {
+                FileOutputStream(tmp.toFile()).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                Files.move(tmp, file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } finally {
+                Files.deleteIfExists(tmp)
+            }
         }
         bitmap.recycle()
         NoteStore.bump()

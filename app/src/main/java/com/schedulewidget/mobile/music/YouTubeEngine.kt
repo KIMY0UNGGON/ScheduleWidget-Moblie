@@ -2,6 +2,7 @@ package com.schedulewidget.mobile.music
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
@@ -48,18 +49,27 @@ internal object YouTubeEngine {
         val wv = WebView(context.applicationContext)
         wv.settings.javaScriptEnabled = true
         wv.settings.domStorageEnabled = true
+        wv.settings.allowFileAccess = false
+        wv.settings.allowContentAccess = false
         wv.settings.mediaPlaybackRequiresUserGesture = false
         wv.webChromeClient = WebChromeClient()
+        // The bridge is visible to every frame; keep its nonce in the top-frame source, never the URL.
+        val token = java.util.UUID.randomUUID().toString()
         wv.webViewClient = object : WebViewClient() {
             // Keep the player page; links inside the embed (logo, "watch on YouTube") are ignored.
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
 
             // Serve the player page from a real https origin (like the desktop's virtual host) so the embed
             // iframe gets a proper Referer; YouTube rejects referrer-less embeds with errors 152/153.
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                if (request.url.toString() == PLAYER_URL)
-                    WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(PLAYER_HTML.toByteArray()))
-                else null
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = when {
+                request.isForMainFrame && isPlayerPage(request.url) -> WebResourceResponse(
+                    "text/html", "utf-8", ByteArrayInputStream(playerHtml(token).toByteArray(Charsets.UTF_8)),
+                )
+                isPlayerHost(request.url) -> WebResourceResponse(
+                    "text/plain", "utf-8", 403, "Forbidden", emptyMap(), ByteArrayInputStream(ByteArray(0)),
+                )
+                else -> null
+            }
 
             // Without this, a killed/crashed WebView renderer (common under memory pressure) kills the whole app.
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -75,11 +85,18 @@ internal object YouTubeEngine {
                 return true
             }
         }
-        wv.addJavascriptInterface(Bridge(), "Android")
+        wv.addJavascriptInterface(Bridge(token), "Android")
         wv.loadUrl(PLAYER_URL)
         webView = wv
         return wv
     }
+
+    private fun isPlayerHost(uri: Uri) = uri.host?.equals("schedulewidget.example", ignoreCase = true) == true
+
+    private fun isPlayerPage(uri: Uri) = uri.scheme == "https" && isPlayerHost(uri) &&
+        uri.port == -1 && uri.userInfo == null && uri.path == "/player.html" && uri.query == null
+
+    private fun playerHtml(token: String) = PLAYER_HTML.replace("__ANDROID_BRIDGE_TOKEN__", JSONObject.quote(token))
 
     fun detach() {
         (webView?.parent as? ViewGroup)?.removeView(webView)
@@ -109,9 +126,10 @@ internal object YouTubeEngine {
         }
     }
 
-    private class Bridge {
+    private class Bridge(private val token: String) {
         @JavascriptInterface
-        fun post(json: String) {
+        fun post(candidate: String, json: String) {
+            if (candidate != token || json.length > 8192) return
             main.post { dispatch(json) }
         }
     }
@@ -129,7 +147,12 @@ internal object YouTubeEngine {
             "state" -> l?.onYtState(request, m.optInt("state"))
             "ended" -> l?.onYtEnded(request)
             "error" -> l?.onYtError(request, m.opt("code")?.toString() ?: "")
-            "time" -> l?.onYtTime(request, m.optDouble("current", 0.0), m.optDouble("duration", 0.0))
+            "time" -> {
+                val current = m.optDouble("current", Double.NaN)
+                val duration = m.optDouble("duration", Double.NaN)
+                if (current.isFinite() && duration.isFinite() && current >= 0 && duration >= 0)
+                    l?.onYtTime(request, current, duration)
+            }
             "title" -> l?.onYtTitle(request, m.optString("title"))
             "blocked" -> l?.onYtBlocked(request)
         }
@@ -143,7 +166,8 @@ internal object YouTubeEngine {
 <body><div id="player"></div><script>
 'use strict';
 let player, pending, request = 0, playlist = false, ended = false, acceptsEnd = false, apiReady = false, wantPaused = false;
-const send = (type, extra = {}) => Android.post(JSON.stringify(Object.assign({type, request}, extra)));
+const bridgeToken = __ANDROID_BRIDGE_TOKEN__;
+const send = (type, extra = {}) => Android.post(bridgeToken, JSON.stringify(Object.assign({type, request}, extra)));
 function load(m) {
   request = m.request; playlist = !!m.list; ended = false; acceptsEnd = false;
   player.setVolume(m.volume);

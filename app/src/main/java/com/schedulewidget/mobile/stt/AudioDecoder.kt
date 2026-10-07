@@ -145,7 +145,8 @@ internal object AudioDecoder {
                     val buffer = c.getOutputBuffer(index)!!
                     buffer.position(info.offset).limit(info.offset + info.size)
                     val rate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                    val channels = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceAtLeast(1)
+                    val channels = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    if (!WavReader.validAudioFormat(channels, rate)) throw AudioDecodeException("녹음의 채널 수나 샘플 속도가 올바르지 않아요")
                     val encoding = if (fmt.containsKey(MediaFormat.KEY_PCM_ENCODING))
                         fmt.getInteger(MediaFormat.KEY_PCM_ENCODING) else AudioFormat.ENCODING_PCM_16BIT
                     val mono = toMono(buffer.order(ByteOrder.nativeOrder()), channels, encoding)
@@ -176,7 +177,10 @@ internal object AudioDecoder {
         override fun onError(c: MediaCodec, e: MediaCodec.CodecException) { done.completeExceptionally(e) }
     }
 
-    private fun emit(samples: FloatArray, sink: (FloatArray) -> Unit) { if (samples.isNotEmpty()) sink(samples) }
+    private fun emit(samples: FloatArray, sink: (FloatArray) -> Unit) {
+        if (samples.any { !it.isFinite() }) throw AudioDecodeException("녹음에 올바르지 않은 소리 값이 있어요")
+        if (samples.isNotEmpty()) sink(samples)
+    }
 
     /** Interleaved PCM (16-bit or float) to mono floats by averaging the channels. */
     private fun toMono(buffer: ByteBuffer, channels: Int, encoding: Int): FloatArray = when (encoding) {
@@ -240,7 +244,9 @@ internal object WavReader {
     fun readHeader(input: InputStream): Header? {
         val riff = ByteArray(12)
         if (readExactly(input, riff) < 12) return null
+        if (String(riff, 0, 4, Charsets.US_ASCII) != "RIFF" || String(riff, 8, 4, Charsets.US_ASCII) != "WAVE") return null
         var channels = 0; var rate = 0; var bits = 0; var format = 0
+        var blockAlign = 0
         val chunkHeader = ByteArray(8)
         while (true) {
             if (readExactly(input, chunkHeader) < 8) return null
@@ -248,20 +254,29 @@ internal object WavReader {
             val size = ByteBuffer.wrap(chunkHeader, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xFFFFFFFFL
             when (id) {
                 "fmt " -> {
-                    val body = ByteArray(size.toInt())
+                    if (size !in 16L..4096L) return null
+                    val body = ByteArray(minOf(size, 40).toInt())
                     if (readExactly(input, body) < body.size) return null
+                    skip(input, size - body.size)
                     if (size % 2 == 1L) input.read()
                     val bb = ByteBuffer.wrap(body).order(ByteOrder.LITTLE_ENDIAN)
                     format = bb.getShort(0).toInt() and 0xFFFF
-                    channels = bb.getShort(2).toInt()
+                    channels = bb.getShort(2).toInt() and 0xFFFF
                     rate = bb.getInt(4)
-                    bits = bb.getShort(14).toInt()
-                    if (format == 0xFFFE && size >= 26) format = bb.getShort(24).toInt() and 0xFFFF
+                    blockAlign = bb.getShort(12).toInt() and 0xFFFF
+                    bits = bb.getShort(14).toInt() and 0xFFFF
+                    if (format == 0xFFFE) {
+                        if (size < 40 || (bb.getShort(16).toInt() and 0xFFFF) < 22) return null
+                        val guid = body.copyOfRange(26, 40)
+                        if (!guid.contentEquals(byteArrayOf(0, 0, 0, 0, 0x10, 0, 0x80.toByte(), 0, 0, 0xAA.toByte(), 0, 0x38, 0x9B.toByte(), 0x71))) return null
+                        format = bb.getShort(24).toInt() and 0xFFFF
+                    }
                 }
                 "data" -> {
-                    if (channels <= 0 || rate <= 0) return null
+                    if (!validAudioFormat(channels, rate)) return null
                     val isFloat = format == 3
                     if (!(format == 1 && bits in listOf(8, 16, 24, 32)) && !(isFloat && bits == 32)) return null
+                    if (blockAlign != channels * (bits / 8)) return null
                     // 0 or 0xFFFFFFFF: size unknown (streamed recorder) -> read to the end of the file.
                     val dataBytes = if (size == 0L || size == 0xFFFFFFFFL) 0L else size
                     return Header(channels, rate, bits / 8, isFloat, dataBytes)
@@ -271,6 +286,8 @@ internal object WavReader {
         }
     }
 
+    internal fun validAudioFormat(channels: Int, sampleRate: Int): Boolean = channels in 1..8 && sampleRate in 8_000..384_000
+
     fun toMono(buf: ByteArray, len: Int, h: Header): FloatArray {
         val bb = ByteBuffer.wrap(buf, 0, len).order(ByteOrder.LITTLE_ENDIAN)
         val frames = len / (h.channels * h.bytesPerSample)
@@ -279,13 +296,15 @@ internal object WavReader {
             var acc = 0f
             for (c in 0 until h.channels) {
                 val p = (i * h.channels + c) * h.bytesPerSample
-                acc += when {
+                val value = when {
                     h.isFloat -> bb.getFloat(p)
                     h.bytesPerSample == 1 -> ((buf[p].toInt() and 0xFF) - 128) / 128f
                     h.bytesPerSample == 2 -> bb.getShort(p) / 32768f
                     h.bytesPerSample == 3 -> ((buf[p].toInt() and 0xFF) or ((buf[p + 1].toInt() and 0xFF) shl 8) or (buf[p + 2].toInt() shl 16)) / 8388608f
                     else -> bb.getInt(p) / 2147483648f
                 }
+                if (!value.isFinite()) throw AudioDecodeException("녹음에 올바르지 않은 소리 값이 있어요")
+                acc += value
             }
             out[i] = acc / h.channels
         }

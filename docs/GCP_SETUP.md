@@ -37,8 +37,8 @@ YouTube 재생목록 로그인은 기존 Windows용 설치형 OAuth 클라이언
 
 | 범위 | 앱에서 쓰는 이유 |
 | --- | --- |
-| `https://www.googleapis.com/auth/calendar.events` | 기본 캘린더 일정을 앱 일정과 양방향 동기화, 사용자가 만든 일정 추가·수정 및 제한된 삭제 |
-| `https://www.googleapis.com/auth/calendar.calendars.readonly` | `calendars/primary?fields=id`로 계정을 식별하여 계정 전환 때 잘못된 이벤트 연결 방지 |
+| `https://www.googleapis.com/auth/calendar.events.owned` | 소유한 기본 캘린더 일정을 앱 일정과 양방향 동기화, 사용자가 만든 일정 추가·수정 및 제한된 삭제 |
+| `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | `users/me/calendarList/primary?fields=id`로 계정을 식별하여 계정 전환 때 잘못된 이벤트 연결 방지 |
 | `https://www.googleapis.com/auth/drive.file` | 앱이 만든 캐릭터 파일 동기화 및 사용자가 별도 동의한 PPT/Word의 임시 변환 사본 관리 |
 | `https://www.googleapis.com/auth/youtube.readonly` | 로그인 계정의 재생목록·좋아요 목록 읽기 |
 | `email` (`https://www.googleapis.com/auth/userinfo.email`) | YouTube 로그인한 계정 표시 |

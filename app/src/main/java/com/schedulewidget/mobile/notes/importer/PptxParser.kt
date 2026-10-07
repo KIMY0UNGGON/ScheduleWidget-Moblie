@@ -47,6 +47,7 @@ class PptxReader(private val src: PartSource) {
         val (w, h) = slideSize(pres)
         widthPt = w; heightPt = h
         slides = slideOrder(pres, Ooxml.rels(src, "ppt/presentation.xml"))
+        if (slides.size > FileKind.MAX_IMPORT_PAGES) throw IOException("슬라이드가 너무 많아요")
         presDefaults = parseLevels(pres.child("defaultTextStyle"), Theme.DEFAULT)
     }
 

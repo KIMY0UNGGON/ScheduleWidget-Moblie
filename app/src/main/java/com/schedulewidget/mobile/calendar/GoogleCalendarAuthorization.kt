@@ -13,13 +13,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 internal object GoogleCalendarAuthorization {
-    private const val EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
-    // calendars.get is used only to identify which account owns the primary calendar. `calendar.events` does not grant
-    // that metadata endpoint, so request its narrower read-only scope explicitly instead of guessing the account.
-    private const val CALENDARS_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.calendars.readonly"
+    private const val EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.owned"
+    // Only the primary calendar's ID is needed to bind saved event links to an account.
+    private const val CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
     suspend fun authorize(context: Context): GoogleCalendarSync.Auth = suspendCancellableCoroutine { cont ->
         val request = AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope(EVENTS_SCOPE), Scope(CALENDARS_READONLY_SCOPE)))
+            .setRequestedScopes(listOf(Scope(EVENTS_SCOPE), Scope(CALENDAR_LIST_SCOPE)))
             .build()
         Identity.getAuthorizationClient(context).authorize(request)
             .addOnSuccessListener { r ->

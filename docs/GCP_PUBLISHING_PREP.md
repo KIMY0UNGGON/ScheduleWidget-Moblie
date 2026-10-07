@@ -35,8 +35,8 @@ Android 클라이언트는 패키지와 배포 인증서 SHA-1로 등록합니�
 
 | 요청 범위 | 제출용 사용 사유 |
 | --- | --- |
-| `https://www.googleapis.com/auth/calendar.events` | 연결한 기본 캘린더 일정을 앱에 표시하고 앱에서 만든 일정의 추가·수정·삭제를 반영합니다. 삭제는 앱에서 연결한 일정에 한해 사용자의 동작과 동기화 설정에 따라 처리합니다. |
-| `https://www.googleapis.com/auth/calendar.calendars.readonly` | 기본 캘린더 ID로 연결 계정을 구분합니다. 계정 변경 시 이전 계정의 이벤트 ID를 새 계정에 잘못 적용하지 않도록 연결 정보를 분리합니다. |
+| `https://www.googleapis.com/auth/calendar.events.owned` | 소유한 기본 캘린더 일정을 앱에 표시하고 앱에서 만든 일정의 추가·수정·삭제를 반영합니다. 삭제는 앱에서 연결한 일정에 한해 사용자의 동작과 동기화 설정에 따라 처리합니다. |
+| `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | 기본 캘린더 ID로 연결 계정을 구분합니다. 계정 변경 시 이전 계정의 이벤트 ID를 새 계정에 잘못 적용하지 않도록 연결 정보를 분리합니다. |
 | `https://www.googleapis.com/auth/drive.file` | 앱이 만든 사용자 캐릭터 ZIP을 동기화하고, 별도 업로드 동의가 있는 문서의 임시 변환 사본을 생성·읽기·삭제합니다. Drive 전체 탐색 권한은 요청하지 않습니다. |
 
 범위는 현재 소스와 일치합니다. `drive.file`은 Google의 비민감 권장 범위이며 공개 앱의 범위별 검증 요구사항은 게시 시 확인합니다. [Calendar 범위](https://developers.google.com/workspace/calendar/api/auth), [Drive 범위](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)

@@ -7,8 +7,15 @@ import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
+import org.xml.sax.InputSource
+import org.xml.sax.SAXException
+import org.xml.sax.Attributes
+import org.xml.sax.helpers.DefaultHandler
+import org.xml.sax.ext.DefaultHandler2
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.parsers.SAXParserFactory
 
 // Shared pieces of the offline PPTX/DOCX readers: the package (zip parts + relationships), a few DOM helpers and the
 // DrawingML/WordprocessingML unit and colour conventions. Pure JVM (javax.xml DOM), so it is unit-testable.
@@ -35,16 +42,23 @@ interface PartSource {
 class ZipPartSource(file: File) : PartSource, Closeable {
     private val zip = ZipFile(file)
     // Some writers use different case or a leading slash; look entries up case-insensitively.
-    private val names: Map<String, String> = zip.entries().asSequence().associate { it.name.trimStart('/').lowercase() to it.name }
+    private val names: Map<String, String> = try {
+        val entries = zip.entries().asSequence().take(Ooxml.MAX_ZIP_ENTRIES + 1).map { it.name }.toList()
+        if (entries.size > Ooxml.MAX_ZIP_ENTRIES) throw IOException("ZIP에 항목이 너무 많아요")
+        entries.associateBy { it.trimStart('/').lowercase() }
+    } catch (e: Exception) {
+        zip.close()
+        throw e
+    }
 
     fun has(path: String) = names.containsKey(path.trimStart('/').lowercase())
 
     override fun read(path: String): ByteArray? {
         val name = names[path.trimStart('/').lowercase()] ?: return null
         val entry = zip.getEntry(name) ?: return null
-        // Guard against zip bombs: a single XML/media part above 200 MB is not something we can draw anyway.
-        if (entry.size > MAX_PART) return null
-        return zip.getInputStream(entry).use { readLimited(it, MAX_PART) }
+        val limit = if (name.endsWith(".xml", true) || name.endsWith(".rels", true)) Ooxml.MAX_XML_BYTES.toLong() else MAX_PART
+        if (entry.size > limit) return null
+        return zip.getInputStream(entry).use { readLimited(it, limit) }
     }
 
     override fun close() = zip.close()
@@ -72,14 +86,59 @@ class MapPartSource(private val parts: Map<String, ByteArray>) : PartSource {
 
 object Ooxml {
     const val NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    internal const val MAX_ZIP_ENTRIES = 100_000
+    internal const val MAX_XML_BYTES = 16 * 1024 * 1024
+    internal const val MAX_XML_DEPTH = 256
+    internal const val MAX_XML_NODES = 100_000
 
     fun parse(bytes: ByteArray): Element {
+        validateXml(bytes)
         val factory = DocumentBuilderFactory.newInstance()
         factory.isNamespaceAware = true
-        // Office parts never carry a DTD; refuse one where the parser lets us (no external entities).
+        // Android's DOM factory does not support this feature; validateXml rejects DTDs before the DOM parser.
         runCatching { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
         runCatching { factory.isExpandEntityReferences = false }
-        return factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes)).documentElement
+        val builder = factory.newDocumentBuilder().apply {
+            setEntityResolver { _, _ -> throw SAXException("외부 XML 엔터티는 허용되지 않아요") }
+        }
+        return builder.parse(ByteArrayInputStream(bytes)).documentElement
+    }
+
+    private fun validateXml(bytes: ByteArray) {
+        if (bytes.size > MAX_XML_BYTES) throw IOException("XML 항목이 너무 커요")
+
+        val factory = SAXParserFactory.newInstance().apply {
+            isNamespaceAware = true
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        }
+        val reader = factory.newSAXParser().xmlReader
+        reader.entityResolver = org.xml.sax.EntityResolver { _, _ -> throw SAXException("외부 XML 엔터티는 허용되지 않아요") }
+        var depth = 0
+        var nodes = 0
+        fun countNode() {
+            if (++nodes > MAX_XML_NODES) throw SAXException("XML 노드가 너무 많아요")
+        }
+        reader.contentHandler = object : DefaultHandler() {
+            override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes?) {
+                if (++depth > MAX_XML_DEPTH) throw SAXException("XML 중첩이 너무 깊어요")
+                nodes += (attributes?.length ?: 0) + 1
+                if (nodes > MAX_XML_NODES) throw SAXException("XML 노드가 너무 많아요")
+            }
+
+            override fun endElement(uri: String?, localName: String?, qName: String?) { depth-- }
+            override fun characters(ch: CharArray, start: Int, length: Int) { if (length > 0) countNode() }
+            override fun processingInstruction(target: String?, data: String?) { countNode() }
+        }
+        reader.setProperty("http://xml.org/sax/properties/lexical-handler", object : DefaultHandler2() {
+            override fun startDTD(name: String?, publicId: String?, systemId: String?) {
+                throw SAXException("DOCTYPE은 허용되지 않아요")
+            }
+
+            override fun startCDATA() { countNode() }
+            override fun comment(ch: CharArray, start: Int, length: Int) { countNode() }
+        })
+        reader.parse(InputSource(ByteArrayInputStream(bytes)))
     }
 
     fun parsePart(src: PartSource, path: String): Element? = src.read(path)?.let { runCatching { parse(it) }.getOrNull() }

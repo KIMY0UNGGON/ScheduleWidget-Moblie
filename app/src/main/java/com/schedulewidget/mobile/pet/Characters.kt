@@ -1,5 +1,6 @@
 package com.schedulewidget.mobile.pet
 
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -223,8 +224,11 @@ object Characters {
         }.getOrNull()?.also { cache.put(key, it) }
     }
 
-    fun userUri(manifest: String): Uri? =
-        if (manifest.startsWith(URI_PREFIX)) runCatching { Uri.parse(manifest.removePrefix(URI_PREFIX)) }.getOrNull() else null
+    fun userUri(manifest: String): Uri? = if (manifest.startsWith(URI_PREFIX)) {
+        runCatching { Uri.parse(manifest.removePrefix(URI_PREFIX)) }.getOrNull()?.takeIf {
+            it.scheme?.equals(ContentResolver.SCHEME_CONTENT, ignoreCase = true) == true && !it.authority.isNullOrBlank()
+        }
+    } else null
 
     /** True when the system "remove animations" setting is on. */
     fun reduceMotion(context: Context): Boolean =

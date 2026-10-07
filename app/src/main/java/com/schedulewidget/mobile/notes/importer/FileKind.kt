@@ -35,6 +35,9 @@ enum class FileKind {
     }
 
     companion object {
+        /** Bounds the page metadata and native PDF work performed for one imported document. */
+        const val MAX_IMPORT_PAGES = 10_000
+
         /** MIME types the file picker and the "열기" intent filter accept. */
         val PICKER_MIMES = arrayOf(
             "application/pdf",

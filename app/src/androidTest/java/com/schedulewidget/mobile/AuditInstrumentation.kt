@@ -204,7 +204,7 @@ class AuditInstrumentation : Instrumentation() {
     }
 
     private fun response(url: URL, method: String): String = when {
-        url.path.endsWith("/calendars/primary") -> {
+        url.path.endsWith("/calendars/primary") || url.path.endsWith("/calendarList/primary") -> {
             if (identityUnavailable) throw IOException("Simulated calendar identity failure")
             "{\"id\":\"$account\"}"
         }

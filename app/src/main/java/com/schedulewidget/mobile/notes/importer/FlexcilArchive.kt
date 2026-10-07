@@ -54,7 +54,7 @@ object FlexcilArchive {
 
     internal const val MAX_DEPTH = 4
     private const val MAX_ENTRY = 1L shl 30
-    internal const val MAX_JSON = 64L shl 20
+    internal const val MAX_JSON = 16L shl 20
 
     internal val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -96,12 +96,12 @@ object FlexcilArchive {
      */
     fun read(file: File, name: String?, work: File, progress: (String) -> Unit = {}, sink: (Book) -> Unit): Result {
         val walker = FlexcilArchiveWalker(work, name, progress, sink, checkActive = {})
-        walker.report.appendLine("file\t${name ?: "?"}\t${file.length()}")
+        walker.reportLine("file\t${name ?: "?"}\t${file.length()}")
         try {
             walker.walk(file, emptyList(), 0)
         } catch (e: Exception) {
             if (e is java.util.concurrent.CancellationException) throw e
-            walker.report.appendLine("error\t${e.javaClass.simpleName}")
+            walker.reportLine("error\t${e.javaClass.simpleName}")
             walker.summary()
             throw FlexcilError(e.message ?: e.javaClass.simpleName, walker.report.toString(), e)
         }
@@ -128,12 +128,12 @@ object FlexcilArchive {
         sink: (FlexcilDocument) -> Unit,
     ): Result {
         val walker = FlexcilArchiveWalker(work, name, progress, {}, sink, checkActive)
-        walker.report.appendLine("file\t${name ?: "?"}\t${file.length()}")
+        walker.reportLine("file\t${name ?: "?"}\t${file.length()}")
         try {
             walker.walk(file, emptyList(), 0)
         } catch (e: Exception) {
             if (e is java.util.concurrent.CancellationException) throw e
-            walker.report.appendLine("error\t${e.javaClass.simpleName}")
+            walker.reportLine("error\t${e.javaClass.simpleName}")
             walker.summary()
             throw FlexcilError(e.message ?: e.javaClass.simpleName, walker.report.toString(), e)
         }
@@ -212,6 +212,7 @@ object FlexcilArchive {
     internal fun inflateWithHeader(bytes: ByteArray): String? = inflateWithHeader(bytes) {}
 
     internal fun inflateWithHeader(bytes: ByteArray, checkActive: () -> Unit): String? {
+        if (bytes.size.toLong() > MAX_JSON) return null
         checkActive()
         val plain = String(bytes, Charsets.UTF_8).trimStart()
         if (plain.startsWith("[") || plain.startsWith("{")) return plain
@@ -225,11 +226,11 @@ object FlexcilArchive {
                 while (!inf.finished()) {
                     checkActive()
                     val n = inf.inflate(buf)
-                    if (n == 0 && (inf.needsInput() || inf.needsDictionary())) break
+                    if (n == 0) break
+                    if (out.size().toLong() + n > MAX_JSON) return null
                     out.write(buf, 0, n)
-                    if (out.size() > MAX_JSON) break
                 }
-                if (out.size() > 0) return out.toString("UTF-8")
+                if (inf.finished() && out.size() > 0) return out.toString("UTF-8")
             } catch (e: Exception) {
                 if (e is java.util.concurrent.CancellationException) throw e
                 // try the other wrapping
@@ -271,7 +272,10 @@ object FlexcilArchive {
         private val zip = ZipFile(file)
         override val kind = "java"
         override val entries: List<Zip.Entry> = try {
-            zip.entries().asSequence().map { Zip.Entry(normalize(it.name), it, it.size, it.compressedSize, it.isDirectory) }.toList()
+            val entries = zip.entries().asSequence().take(Ooxml.MAX_ZIP_ENTRIES + 1)
+                .map { Zip.Entry(normalize(it.name), it, it.size, it.compressedSize, it.isDirectory) }.toList()
+            if (entries.size > Ooxml.MAX_ZIP_ENTRIES) throw IOException("ZIP에 항목이 너무 많아요")
+            entries
         } catch (e: Exception) {
             zip.close()
             throw e
@@ -283,10 +287,45 @@ object FlexcilArchive {
     private class CommonsZip(file: File) : Zip {
         private val zip = org.apache.commons.compress.archivers.zip.ZipFile.builder().setFile(file).get()
         override val kind = "commons"
-        override val entries: List<Zip.Entry> = zip.entries.asSequence()
-            .map { Zip.Entry(normalize(it.name), it, it.size, it.compressedSize, it.isDirectory) }.toList()
+        override val entries: List<Zip.Entry> = try {
+            val entries = zip.entries.asSequence().take(Ooxml.MAX_ZIP_ENTRIES + 1)
+                .map { Zip.Entry(normalize(it.name), it, it.size, it.compressedSize, it.isDirectory) }.toList()
+            if (entries.size > Ooxml.MAX_ZIP_ENTRIES) throw IOException("ZIP에 항목이 너무 많아요")
+            entries
+        } catch (e: Exception) {
+            zip.close()
+            throw e
+        }
         override fun open(e: Zip.Entry): InputStream =
             zip.getInputStream(e.raw as org.apache.commons.compress.archivers.zip.ZipArchiveEntry)
         override fun close() = zip.close()
     }
 }
+
+/** Cheap preflight for Kotlinx JSON's tree parser: cap nesting and token count before it allocates nodes. */
+internal fun hasSafeJsonStructure(text: String): Boolean {
+    var depth = 0
+    var nodes = 0
+    var inString = false
+    var escaped = false
+    for (c in text) {
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                c == '\\' -> escaped = true
+                c == '"' -> inString = false
+            }
+        } else when (c) {
+            '"' -> inString = true
+            '{', '[' -> {
+                if (++depth > MAX_JSON_DEPTH || ++nodes > MAX_JSON_NODES) return false
+            }
+            '}', ']' -> if (--depth < 0) return false
+            ',', ':' -> if (++nodes > MAX_JSON_NODES) return false
+        }
+    }
+    return depth == 0 && !inString
+}
+
+private const val MAX_JSON_DEPTH = 128
+private const val MAX_JSON_NODES = 100_000

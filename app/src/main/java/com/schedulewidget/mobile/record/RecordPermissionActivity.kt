@@ -42,7 +42,12 @@ class RecordPermissionActivity : ComponentActivity() {
 
     private fun startAndFinish() {
         if (!Recorder.isRecording) {
-            runCatching { ContextCompat.startForegroundService(this, RecordService.startIntent(this, fromActivity = true)) }
+            runCatching {
+                ContextCompat.startForegroundService(
+                    this,
+                    RecordService.startIntent(this, fromActivity = true, noteId = intent.getStringExtra(RecordService.EXTRA_NOTE_ID)),
+                )
+            }
                 .onFailure { Toast.makeText(this, "녹음을 시작할 수 없어요", Toast.LENGTH_SHORT).show() }
         }
         finish()
@@ -51,10 +56,11 @@ class RecordPermissionActivity : ComponentActivity() {
     }
 
     companion object {
-        fun launch(context: Context) {
+        fun launch(context: Context, noteId: String? = null) {
             runCatching {
                 context.startActivity(
                     Intent(context, RecordPermissionActivity::class.java)
+                        .putExtra(RecordService.EXTRA_NOTE_ID, noteId)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 )
             }

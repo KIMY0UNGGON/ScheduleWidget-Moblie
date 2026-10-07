@@ -57,7 +57,7 @@ dependencies {
     // Offline speech-to-text, VAD and speaker diarization (k2-fsa/sherpa-onnx release AAR, Apache-2.0).
     implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     // .tar.bz2 model archives.
-    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")

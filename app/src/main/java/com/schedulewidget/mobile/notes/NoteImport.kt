@@ -2,6 +2,7 @@ package com.schedulewidget.mobile.notes
 
 import android.content.Context
 import android.net.Uri
+import android.os.CancellationSignal
 import androidx.activity.result.IntentSenderRequest
 import com.schedulewidget.mobile.notes.importer.FileKind
 import com.schedulewidget.mobile.notes.importer.FlexcilArchive
@@ -24,6 +25,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.Closeable
 import java.io.IOException
 
 /** Import of files into notebooks (implemented with the library). */
@@ -80,6 +82,8 @@ object NoteImport {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
     @Volatile private var job: Job? = null
+    @Volatile private var activeInput: Closeable? = null
+    @Volatile private var activeCancellation: CancellationSignal? = null
 
     internal class ImportError(message: String, val diagnostic: File? = null) : Exception(message)
     private class Outcome(
@@ -114,6 +118,8 @@ object NoteImport {
 
     fun cancel() {
         job?.cancel()
+        runCatching { activeCancellation?.cancel() }
+        runCatching { activeInput?.close() }
         consentWaiter?.complete(null)
     }
 
@@ -271,26 +277,55 @@ object NoteImport {
         val name = NoteImportFiles.displayName(app, uri)
         // Seekable SAF files avoid a second multi-GB cache copy of backup recordings we don't import.
         if (FlexcilArchive.isFlexcilName(name) || name?.endsWith(".zip", true) == true) {
-            val descriptor = runCatching { app.contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
-            descriptor?.use { fd ->
-                val direct = File("/proc/self/fd/${fd.fd}")
-                if (fd.statSize > 0 && FlexcilArchive.looksLikeFlexcil(direct))
-                    return flexcil(app, direct, name, folder, work)
+            val signal = CancellationSignal()
+            activeCancellation = signal
+            try {
+                val descriptor = runCatching { app.contentResolver.openFileDescriptor(uri, "r", signal) }.getOrNull()
+                descriptor?.use { fd ->
+                    activeInput = fd
+                    try {
+                        val direct = File("/proc/self/fd/${fd.fd}")
+                        if (fd.statSize > 0 && FlexcilArchive.looksLikeFlexcil(direct))
+                            return flexcil(app, direct, name, folder, work)
+                    } finally {
+                        if (activeInput === fd) activeInput = null
+                    }
+                }
+            } finally {
+                if (activeCancellation === signal) activeCancellation = null
             }
+            currentCoroutineContext().ensureActive()
         }
         val mime = runCatching { app.contentResolver.getType(uri) }.getOrNull()
         val input = File(work, "input")
         val importJob = currentCoroutineContext().job
-        (app.contentResolver.openInputStream(uri) ?: throw ImportError("파일을 열 수 없어요")).use { src ->
-            input.outputStream().use { output ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    importJob.ensureActive()
-                    val count = src.read(buffer)
-                    if (count < 0) break
-                    output.write(buffer, 0, count)
+        val signal = CancellationSignal()
+        activeCancellation = signal
+        val descriptor = try {
+            app.contentResolver.openAssetFileDescriptor(uri, "r", signal) ?: throw ImportError("파일을 열 수 없어요")
+        } catch (e: Throwable) {
+            if (activeCancellation === signal) activeCancellation = null
+            importJob.ensureActive()
+            throw e
+        }
+        val src = try { descriptor.createInputStream() } catch (e: Throwable) {
+            descriptor.close()
+            if (activeCancellation === signal) activeCancellation = null
+            throw e
+        }
+        activeInput = src
+        try {
+            src.use { stream ->
+                input.outputStream().use { output ->
+                    if (!NoteImportFiles.copyLimited(stream, output, NoteImportFiles.MAX_IMPORT_BYTES) { importJob.ensureActive() }) {
+                        throw ImportError("파일이 1GB보다 커서 가져오지 못했어요")
+                    }
                 }
             }
+        } finally {
+            if (activeInput === src) activeInput = null
+            runCatching { descriptor.close() }
+            if (activeCancellation === signal) activeCancellation = null
         }
         if (input.length() == 0L) throw ImportError("빈 파일이에요")
         val head = input.inputStream().use { s -> ByteArray(1024).let { b -> val n = s.read(b); if (n <= 0) ByteArray(0) else b.copyOf(n) } }

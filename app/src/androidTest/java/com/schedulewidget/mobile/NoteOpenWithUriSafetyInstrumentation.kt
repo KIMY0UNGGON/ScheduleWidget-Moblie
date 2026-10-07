@@ -5,6 +5,7 @@ import android.app.Instrumentation
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Process
 import androidx.core.content.FileProvider
 import com.schedulewidget.mobile.notes.NoteImport
 import com.schedulewidget.mobile.notes.library.NoteOpenWith
@@ -33,6 +34,11 @@ class NoteOpenWithUriSafetyInstrumentation : Instrumentation() {
             }
             check(NoteOpenWith.isImportableUri(context, Uri.parse("content://com.example.provider/document/1"))) {
                 "A shared content URI was rejected"
+            }
+            val userAuthority = "${Process.myUid() / 100_000}@${context.packageName}.files"
+            val ownUserUri = Uri.parse("content://$userAuthority/shared.pdf")
+            check(!NoteOpenWith.isImportableUri(context, ownUserUri)) {
+                "The app's own FileProvider URI with an Android user prefix was accepted"
             }
 
             fun assertRejected(intent: Intent, label: String) {
@@ -64,6 +70,10 @@ class NoteOpenWithUriSafetyInstrumentation : Instrumentation() {
             sharedFile = shared
             val ownUri = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
             assertRejected(Intent(Intent.ACTION_VIEW).setData(ownUri), "app FileProvider URI")
+            val prefixedOwnUri = ownUri.buildUpon()
+                .encodedAuthority(userAuthority)
+                .build()
+            assertRejected(Intent(Intent.ACTION_VIEW).setData(prefixedOwnUri), "app FileProvider URI with Android user prefix")
         } catch (e: Throwable) {
             failure = e
         } finally {

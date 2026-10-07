@@ -126,6 +126,7 @@ internal fun EditorTopBar(
     st: EditorState, title: String, sttEnabled: Boolean, onBack: () -> Unit, onRename: () -> Unit,
     onPages: () -> Unit, onAddPage: () -> Unit, onShare: () -> Unit, onSaveAs: () -> Unit,
     fingerDraws: Boolean, onFingerDraws: (Boolean) -> Unit, onImmersive: () -> Unit,
+    recordingCount: Int, onRecordings: () -> Unit,
 ) {
     val context = LocalContext.current
     val c = NotesTokens.colors
@@ -148,7 +149,7 @@ internal fun EditorTopBar(
                 // Recording: a soft red-tinted pill so it reads as "live" without shouting.
                 NotesIconButton(Icons.Filled.Stop, "녹음 중지", { Recorder.stop(context) }, selected = true, tint = c.danger)
             } else {
-                NotesIconButton(Icons.Filled.Mic, "녹음 시작", { Recorder.start(context) })
+                NotesIconButton(Icons.Filled.Mic, "녹음 시작", { Recorder.start(context, st.noteId) })
             }
         }
         NotesIconButton(Icons.Filled.GridView, "페이지", onPages)
@@ -161,12 +162,13 @@ internal fun EditorTopBar(
             ) {
                 if (compact) {
                     MenuItem("다시 실행", Icons.AutoMirrored.Filled.Redo, enabled = st.canRedo) { menu = false; st.redo() }
-                    if (sttEnabled && !rec.isRecording) MenuItem("녹음 시작", Icons.Filled.Mic) { menu = false; Recorder.start(context) }
+                    if (sttEnabled && !rec.isRecording) MenuItem("녹음 시작", Icons.Filled.Mic) { menu = false; Recorder.start(context, st.noteId) }
                 }
                 MenuItem("빈 페이지 추가", Icons.AutoMirrored.Filled.NoteAdd) { menu = false; onAddPage() }
                 if (sttEnabled) MenuItem("녹음 연동 (필기 탭 → 재생)", Icons.Filled.Link, checked = st.linkMode) {
                     menu = false; st.inputToolOverride = null; st.linkMode = !st.linkMode; st.clearSelection()
                 }
+                MenuItem("노트 녹음 ($recordingCount)", Icons.Filled.Mic) { menu = false; onRecordings() }
                 MenuItem("손가락으로 필기", Icons.Filled.TouchApp, checked = fingerDraws) { menu = false; onFingerDraws(!fingerDraws) }
                 MenuItem("전체 화면", Icons.Filled.Fullscreen) { menu = false; onImmersive() }
                 HorizontalDivider(Modifier.padding(vertical = NotesSpace.xxs), thickness = 1.dp, color = c.hairlineSoft)

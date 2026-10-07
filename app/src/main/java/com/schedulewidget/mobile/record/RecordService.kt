@@ -80,7 +80,10 @@ class RecordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> if (recorder == null) begin(intent.getBooleanExtra(EXTRA_FROM_ACTIVITY, false))
+            ACTION_START -> if (recorder == null) begin(
+                intent.getBooleanExtra(EXTRA_FROM_ACTIVITY, false),
+                intent.getStringExtra(EXTRA_NOTE_ID),
+            )
             ACTION_STOP -> if (recorder != null) stopRecording(null) else finishService()
             // Restarted by the system without an intent: nothing to resume (the old file was finalised or is lost).
             else -> if (recorder == null) stopSelf()
@@ -88,7 +91,7 @@ class RecordService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun begin(fromActivity: Boolean) {
+    private fun begin(fromActivity: Boolean, noteId: String?) {
         val now = System.currentTimeMillis()
         startedElapsed = SystemClock.elapsedRealtime()
         // startForeground first: Android requires it soon after startForegroundService, whatever happens next.
@@ -107,7 +110,7 @@ class RecordService : Service() {
         if (!Recorder.enabled(this)) return finishService()
         if (!Recorder.hasPermission(this)) {
             finishService()
-            RecordPermissionActivity.launch(this)
+            RecordPermissionActivity.launch(this, noteId)
             return
         }
         val file = Recordings.newFile(this, now)
@@ -120,7 +123,10 @@ class RecordService : Service() {
         }
         recorder = started
         audio = file
-        val m = RecordingMeta(id = file.nameWithoutExtension, title = Recordings.defaultTitle(now), createdAt = now, file = file.name)
+        val m = RecordingMeta(
+            id = file.nameWithoutExtension, title = Recordings.defaultTitle(now), createdAt = now,
+            file = file.name, noteId = noteId,
+        )
         meta = m
         // Written now (length 0) so an interrupted recording still shows up with its title.
         Recordings.save(this, m)
@@ -267,6 +273,7 @@ class RecordService : Service() {
         private const val ACTION_START = "com.schedulewidget.mobile.RECORD_START"
         private const val ACTION_STOP = "com.schedulewidget.mobile.RECORD_STOP"
         private const val EXTRA_FROM_ACTIVITY = "from_activity"
+        const val EXTRA_NOTE_ID = "note_id"
         private const val MIN_FREE_BYTES = 50L * 1024 * 1024
         private const val MAX_WAKE_MS = 12L * 60 * 60 * 1000
         private const val MESSAGE_FULL = "저장 공간이 부족해 녹음을 멈추고 저장했어요"
@@ -276,8 +283,10 @@ class RecordService : Service() {
         /** The running service (main thread only), so Recorder.stop can stop without another service start. */
         @Volatile internal var current: RecordService? = null
 
-        fun startIntent(context: Context, fromActivity: Boolean): Intent =
-            Intent(context, RecordService::class.java).setAction(ACTION_START).putExtra(EXTRA_FROM_ACTIVITY, fromActivity)
+        fun startIntent(context: Context, fromActivity: Boolean, noteId: String? = null): Intent =
+            Intent(context, RecordService::class.java).setAction(ACTION_START)
+                .putExtra(EXTRA_FROM_ACTIVITY, fromActivity)
+                .putExtra(EXTRA_NOTE_ID, noteId)
 
         fun stopIntent(context: Context): Intent = Intent(context, RecordService::class.java).setAction(ACTION_STOP)
     }

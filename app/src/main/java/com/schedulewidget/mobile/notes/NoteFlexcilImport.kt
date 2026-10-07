@@ -98,7 +98,9 @@ internal object NoteFlexcilImport {
     private suspend fun restoreBook(app: Context, book: FlexcilDocument, folder: String?, firstId: Long): Pair<NoteMeta, Int> {
         val sizes = try {
             runBlocking(PdfThread.dispatcher) {
-                book.pdfs.mapValues { (_, file) -> PdfDoc(file).use { it.pageSizes() } }
+                book.pdfs.mapValues { (_, file) -> PdfDoc(file).use {
+                    it.pageSizes()
+                } }
             }
         } catch (e: SecurityException) {
             throw FlexcilArchive.PasswordProtectedPdf(e)

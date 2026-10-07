@@ -115,7 +115,7 @@
         <!-- pet/ : home-screen "모바일 신분증" shortcut target (opens 순천향톡's ID, no UI of its own). -->
         <activity
             android:name=".pet.IdShortcutActivity"
-            android:exported="true"
+            android:exported="false"
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:label="모바일 신분증"

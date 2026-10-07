@@ -52,6 +52,12 @@ class ParityInstrumentation : Instrumentation() {
             check(character.extra["keyboard2"]?.row == 14) { "keyboard2 row was not read" }
         }
 
+        test("character image manifests accept only SAF content URIs") {
+            check(Characters.userUri("uri:file:///data/data/example/image.png") == null)
+            check(Characters.userUri("uri:https://example.test/image.png") == null)
+            check(Characters.userUri("uri:content://com.example.provider/image/1") != null)
+        }
+
         test("v5 zip import accepts a 17-row sheet and preserves keyboard rows") {
             val id = "audit-v5-${System.nanoTime()}"
             val png = ByteArrayOutputStream().use { output ->

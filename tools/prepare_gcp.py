@@ -14,7 +14,7 @@ scope_pattern = r'"(https://www\.googleapis\.com/auth/[^"\s]+)"'
 scopes = sorted({scope for path in ("calendar/GoogleCalendarAuthorization.kt", "pet/DrivePets.kt")
                  for scope in re.findall(scope_pattern, (sources / path).read_text(encoding="utf-8-sig"))})
 expected = ["https://www.googleapis.com/auth/" + name for name in
-            ("calendar.calendars.readonly", "calendar.events", "drive.file")]
+            ("calendar.calendarlist.readonly", "calendar.events.owned", "drive.file")]
 if scopes != expected:
     raise SystemExit("Calendar/Drive scopes changed; review the publishing draft before updating it.")
 report = args.signing_report.read_text(encoding="utf-8-sig")

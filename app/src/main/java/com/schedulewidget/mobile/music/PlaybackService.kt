@@ -3,10 +3,12 @@ package com.schedulewidget.mobile.music
 import android.app.PendingIntent
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Process
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -14,6 +16,8 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.schedulewidget.mobile.MainActivity
 import com.schedulewidget.mobile.ui.Route
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -72,7 +76,26 @@ class PlaybackService : MediaSessionService() {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaSession.Builder(this, player).setSessionActivity(open).build()
+        val callback = object : MediaSession.Callback {
+            @OptIn(UnstableApi::class)
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+            ): MediaSession.ConnectionResult = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailablePlayerCommands(playerCommandsFor(controller))
+                .build()
+
+            override fun onAddMediaItems(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                mediaItems: List<MediaItem>,
+            ): ListenableFuture<List<MediaItem>> = if (acceptsMediaItems(controller, mediaItems)) {
+                Futures.immediateFuture(mediaItems)
+            } else {
+                Futures.immediateFailedFuture(SecurityException("Unsupported media URI"))
+            }
+        }
+        session = MediaSession.Builder(this, player).setCallback(callback).setSessionActivity(open).build()
     }
 
     private fun updateBoost(sessionId: Int) {
@@ -86,7 +109,9 @@ class PlaybackService : MediaSessionService() {
         fx.apply(boostPercent)
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    @OptIn(UnstableApi::class)
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+        session.takeIf { allowsController(controllerInfo) }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = session?.player
@@ -122,5 +147,27 @@ class PlaybackService : MediaSessionService() {
         override fun seekToNextMediaItem() = WidgetPlayer.next(this@PlaybackService)
         override fun seekToPrevious() = WidgetPlayer.previous(this@PlaybackService)
         override fun seekToPreviousMediaItem() = WidgetPlayer.previous(this@PlaybackService)
+    }
+
+    companion object {
+        @OptIn(UnstableApi::class)
+        internal fun allowsController(controller: MediaSession.ControllerInfo): Boolean =
+            controller.uid == Process.myUid() || controller.isTrusted
+
+        @OptIn(UnstableApi::class)
+        internal fun playerCommandsFor(controller: MediaSession.ControllerInfo): Player.Commands =
+            MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon().apply {
+                if (controller.uid != Process.myUid()) {
+                    remove(Player.COMMAND_SET_MEDIA_ITEM)
+                    remove(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+                }
+            }.build()
+
+        internal fun acceptsMediaItems(
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+        ): Boolean = controller.uid == Process.myUid() && mediaItems.all {
+            it.localConfiguration?.uri?.scheme.equals("content", ignoreCase = true)
+        }
     }
 }
