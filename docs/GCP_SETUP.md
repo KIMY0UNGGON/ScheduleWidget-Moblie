@@ -1,6 +1,6 @@
 # ScheduleWidget Notes Google OAuth 등록
 
-2026-10-06 기준. 업로드할 소스: [KIMY0UNGGON/ScheduleWidget-Moblie](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie).
+2026-10-07 기준. 공개 소스: [KIMY0UNGGON/ScheduleWidget-Moblie](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie).
 
 **현재 작업은 게시 준비까지입니다.** Calendar·Drive 입력값과 사용 사유, 시연 순서는 [앱 게시 준비](GCP_PUBLISHING_PREP.md)에 정리했습니다. Google 계정 연결·콘솔 등록·사이트 배포·검증 제출은 이번 작업에서 실행하지 않았습니다.
 
@@ -14,14 +14,14 @@
 | 운영자 | GitHub KIMY0UNGGON |
 | 사용자 지원 이메일 | `ddd84860@gmail.com` (운영자가 제공) |
 | 개발자 연락처 | `ddd84860@gmail.com` |
-| 홈페이지·정책 | `docs/index.html`, `docs/privacy.html` 준비. 비공개 소스 저장소 자체는 공개 정책 URL이 아님 |
+| 홈페이지·정책 | `docs/index.html`, `docs/privacy.html` 준비. 소스 공개만으로 별도 정책 사이트가 게시되는 것은 아님 |
 | 정책 소스 | `PRIVACY.md`; 앱 안 설정 > 개인정보에도 같은 내용 포함 |
 | Android 패키지 | `com.schedulewidget.mobile` |
 | 로컬 debug SHA-1 | `9A:16:08:76:BB:B1:A6:36:12:19:44:40:CB:8D:8C:11:2A:60:4F:F7` — 2026-10-06 `signingReport` 재확인 |
 | 배포 SHA-1 | 별도 release/Play 앱 서명 인증서로 등록 필요. debug 인증서는 Play 배포 인증서가 아님 |
 | 검증 상태 | 로그인한 Cloud Console과 실제 계정으로 확인 필요 |
 
-현재는 사용자가 지정한 **테스트 단계**입니다. 저장소는 비공개이며 OAuth Audience는 향후 콘솔 확인 시 Testing으로 설정합니다. 실제 현재 Audience 상태는 확인하지 않았습니다. 테스트 사용자에는 운영자가 지정한 시험 계정을 추가합니다. 게시 단계에서 공개 정책 URL의 무로그인 접근·소유 확인과 실제 배포 인증서 등록을 완료한 후 해당 검증을 진행합니다.
+소스는 공개 상태입니다. Google 연동은 로컬 게시 준비 단계이며 실제 OAuth Audience 상태는 확인하지 않았습니다. 향후 콘솔 등록 시 Testing으로 설정하고 운영자가 지정한 시험 계정을 추가합니다. Google 게시 단계에서 공개 정책 URL의 무로그인 접근·소유 확인과 실제 배포 인증서 등록을 완료한 후 해당 검증을 진행합니다.
 
 홈페이지와 개인정보처리방침은 로그인 없이 읽을 수 있는 동일 도메인의 HTTPS 페이지로 게시합니다. 홈페이지는 앱 목적·기능·운영자·지원 창구·개인정보처리방침 링크를 보여 주어야 합니다. 해당 도메인을 프로젝트 소유자/편집자가 Search Console에서 소유 확인하고 Google Auth Platform의 Authorized domains에 넣습니다. 비공개 소스 저장소의 공개 정책 사이트는 별도로 운영할 수 있습니다. 소스 공개나 유료 요금제 변경은 이 등록 작업의 전제가 아닙니다.
 
