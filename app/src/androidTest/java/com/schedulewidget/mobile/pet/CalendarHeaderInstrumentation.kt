@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.schedulewidget.mobile.MainActivity
 import com.schedulewidget.mobile.data.Repository
 import com.schedulewidget.mobile.ui.AppTheme
+import com.schedulewidget.mobile.ui.KoreanHolidays
 import com.schedulewidget.mobile.ui.MiniThemes
 import com.schedulewidget.mobile.ui.Route
 import java.io.File
@@ -83,8 +85,9 @@ class CalendarHeaderInstrumentation : Instrumentation() {
             for (width in widths) for (fontScale in listOf(1f, 1.5f)) {
                 showCalendar(host, width, fontScale, opened, added, closed, rendered)
                 assertHeaderLayout(width, metrics.widthPixels, metrics.density)
+                assertDayTextCentered(width, metrics.widthPixels, metrics.density)
                 check(nodes().none { it.text?.toString() == "일정 없음" }) { "Empty calendar days should stay blank" }
-                results += "PASS: centered header and blank days at ${width}dp / fontScale=$fontScale"
+                results += "PASS: header order, touch targets, Today slot, centered day text, and blank days at ${width}dp / fontScale=$fontScale"
                 if ((width == 280 && fontScale == 1.5f) || (width == 400 && fontScale == 1f)) {
                     val image = checkNotNull(uiAutomation.takeScreenshot())
                     val file = File(targetContext.cacheDir, "calendar-header-$width-${fontScale.toString().replace('.', '_')}-$runId.png")
@@ -97,18 +100,8 @@ class CalendarHeaderInstrumentation : Instrumentation() {
                 }
             }
 
-            // Compact controls: the theme menu is left, app-open beside it, Settings stays on the right.
+            // Compact 280dp / 1.5 header: its order, touch targets, and Today slot are checked in the loop above.
             showCalendar(host, 280, 1.5f, opened, added, closed, rendered)
-            val theme = nodes().firstOrNull { it.contentDescription?.toString()?.startsWith("테마 선택") == true }
-            val appOpen = nodes().firstOrNull { it.contentDescription?.toString() == "앱 열기" }
-            val settings = nodes().firstOrNull { it.contentDescription?.toString() == "설정" }
-            check(theme != null && appOpen != null && settings != null) { "Compact header must keep theme, app-open, and Settings controls" }
-            val themeBounds = bounds(theme!!)
-            val appBounds = bounds(appOpen!!)
-            val settingsBounds = bounds(settings!!)
-            check(themeBounds.centerX() < appBounds.centerX() && appBounds.centerX() < settingsBounds.centerX()) {
-                "Compact header controls are out of order"
-            }
             clickDescription("테마 선택: Light")
             await("theme menu") { nodes().any { it.text?.toString() == "Blue" } }
             clickText("Blue")
@@ -158,6 +151,14 @@ class CalendarHeaderInstrumentation : Instrumentation() {
                 "Expected a displayed week that crosses a month boundary"
             }
             results += "PASS: period navigation crosses a month boundary with flip effect 0"
+
+            clickToday()
+            await("Today returns to LocalDate.now") { displaysPage(LocalDate.now()) }
+            clickDescription("테마 선택: Blue")
+            await("add menu after Today") { nodes().any { it.text?.toString() == "일정 추가" } }
+            clickText("일정 추가")
+            await("add receives today") { added.lastOrNull() == LocalDate.now() }
+            results += "PASS: Today returns the period to LocalDate.now and add receives today"
 
             repo.update { original }
             val calendarActivity = checkNotNull(activity)
@@ -234,57 +235,140 @@ class CalendarHeaderInstrumentation : Instrumentation() {
             }
         }
         waitForIdleSync()
-        await("calendar header at ${widthDp}dp / $fontScale") {
-            val size = rendered.get()
-            size != null && size.widthPx == (widthDp * targetContext.resources.displayMetrics.density).roundToInt() &&
-                size.fontScale == fontScale && hasExpectedControlBounds(widthDp, targetContext.resources.displayMetrics.widthPixels,
-                    targetContext.resources.displayMetrics.density)
-        }
+        var issue = "header not rendered"
+        val metrics = targetContext.resources.displayMetrics
+        runCatching {
+            await("calendar header at ${widthDp}dp / $fontScale") {
+                val size = rendered.get()
+                size != null && size.widthPx == (widthDp * metrics.density).roundToInt() && size.fontScale == fontScale &&
+                    headerIssue(widthDp, metrics.widthPixels, metrics.density).also { issue = it ?: "none" } == null
+            }
+        }.onFailure { error("${it.message}; last header check: $issue") }
     }
 
-    private fun hasExpectedControlBounds(widthDp: Int, screenWidthPx: Int, density: Float): Boolean {
+    /** Reading order of the header actions: Today takes app-open's old slot, and app-open sits immediately left of Settings. */
+    private val headerActions = listOf("이전 7일", "테마 선택", "오늘로 이동", "앱 열기", "설정", "다음 7일")
+
+    private fun headerNode(action: String): AccessibilityNodeInfo? = nodes().firstOrNull {
+        val description = it.contentDescription?.toString().orEmpty()
+        if (action == "테마 선택") description.startsWith(action) else description == action || it.text?.toString() == action
+    }
+
+    /** Bounds of the clickable ancestor: the 48dp touch target, not the 24dp icon that carries the description. */
+    private fun touchBounds(node: AccessibilityNodeInfo): Rect {
+        var target: AccessibilityNodeInfo? = node
+        while (target != null && !target.isClickable) target = target.parent
+        return bounds(target ?: node)
+    }
+
+    /** The first header expectation that fails at this width, or null when the layout matches. */
+    private fun headerIssue(widthDp: Int, screenWidthPx: Int, density: Float): String? {
         val panelWidthPx = (widthDp * density).roundToInt()
-        val panelLeft = (screenWidthPx - panelWidthPx) / 2f
-        fun near(description: String, offsetDp: Float): Boolean {
-            val node = nodes().firstOrNull { it.contentDescription?.toString() == description } ?: return false
-            val expected = panelLeft + offsetDp * density
-            return abs(bounds(node).centerX().toFloat() - expected) <= 8f * density
+        val panelLeft = (screenWidthPx - panelWidthPx) / 2
+        val cardLeft = panelLeft + 10 * density
+        val cardRight = panelLeft + panelWidthPx - 10 * density
+        val period = periodNode()?.let { bounds(it) } ?: return "date period is missing"
+        if (abs(period.centerX() - screenWidthPx / 2) > 5 * density) return "date period is not centered: $period"
+        val touch = mutableMapOf<String, Rect>()
+        for (action in headerActions) touch[action] = touchBounds(headerNode(action) ?: return "missing control: $action")
+        for ((action, rect) in touch) {
+            if (rect.width() < 48 * density - 1 || rect.height() < 48 * density - 1) return "$action touch target is under 48dp: $rect"
+            if (rect.left < cardLeft || rect.right > cardRight) return "$action is outside the card: $rect"
         }
-        val center = screenWidthPx / 2f
-        val period = periodNode()?.let { bounds(it).centerX().toFloat() } ?: return false
-        val theme = nodes().firstOrNull { it.contentDescription?.toString()?.startsWith("테마 선택") == true } ?: return false
-        val app = nodes().firstOrNull { it.contentDescription?.toString() == "앱 열기" } ?: return false
-        return near("이전 7일", 38f) && near("앱 열기", 134f) && near("설정", widthDp - 86f) &&
-            near("다음 7일", widthDp - 38f) && abs(period - center) <= 8f * density &&
-            bounds(theme).centerX() < bounds(app).centerX()
+        val entries = touch.entries.toList()
+        for (i in entries.indices) for (j in i + 1 until entries.size) {
+            if (Rect.intersects(entries[i].value, entries[j].value)) {
+                return "${entries[i].key} overlaps ${entries[j].key}: ${entries[i].value} / ${entries[j].value}"
+            }
+        }
+        for ((before, after) in listOf("테마 선택", "오늘로 이동", "앱 열기", "설정").zipWithNext()) {
+            val a = touch.getValue(before)
+            val b = touch.getValue(after)
+            val sameRow = a.top < b.bottom && b.top < a.bottom
+            val ordered = if (sameRow) b.centerX() > a.centerX() else b.centerY() > a.centerY()
+            if (!ordered) return "$after is not after $before: $a / $b"
+        }
+        val app = touch.getValue("앱 열기")
+        val settings = touch.getValue("설정")
+        val gap = settings.left - app.right
+        if (app.top >= settings.bottom || settings.top >= app.bottom || gap !in -1..(2 * density).roundToInt()) {
+            return "app-open is not immediately left of Settings: $app / $settings"
+        }
+        // App-open's old slot: 10dp card padding + 4dp header padding + previous + theme + half of Today.
+        val today = touch.getValue("오늘로 이동")
+        val todaySlot = if (widthDp < 316) 86 else 134
+        if (abs(today.centerX() - (panelLeft + todaySlot * density)) > 8 * density) return "Today is not beside the theme control: $today"
+        if (widthDp >= 380) {
+            // Single-row layout (OverlayCalendar's compact threshold): each control keeps a fixed slot from the edges.
+            val slots = mapOf("이전 7일" to 38, "테마 선택" to 86, "오늘로 이동" to 134, "앱 열기" to widthDp - 134, "설정" to widthDp - 86, "다음 7일" to widthDp - 38)
+            for ((action, slot) in slots) {
+                val rect = touch.getValue(action)
+                if (abs(rect.centerX() - (panelLeft + slot * density)) > 8 * density) return "$action is off its ${slot}dp slot: $rect"
+            }
+        }
+        return null
     }
 
     private fun assertHeaderLayout(widthDp: Int, screenWidthPx: Int, density: Float) {
-        val period = checkNotNull(periodNode()) { "Displayed date period is missing" }
-        val theme = nodes().first { it.contentDescription?.toString()?.startsWith("테마 선택") == true }
-        val appOpen = nodes().first { it.contentDescription?.toString() == "앱 열기" }
-        val settings = nodes().first { it.contentDescription?.toString() == "설정" }
-        val previous = nodes().first { it.contentDescription?.toString() == "이전 7일" }
-        val next = nodes().first { it.contentDescription?.toString() == "다음 7일" }
-        val periodBounds = bounds(period)
-        val themeBounds = bounds(theme)
-        val appOpenBounds = bounds(appOpen)
-        val settingsBounds = bounds(settings)
-        val previousBounds = bounds(previous)
-        val nextBounds = bounds(next)
-        check(abs(periodBounds.centerX() - screenWidthPx / 2) <= (5 * density).roundToInt()) {
-            "Date period is not centered in the panel at ${widthDp}dp: $periodBounds"
-        }
-        check(previousBounds.centerX() < themeBounds.centerX() && themeBounds.centerX() < appOpenBounds.centerX() &&
-            appOpenBounds.centerX() < periodBounds.centerX() && periodBounds.centerX() < settingsBounds.centerX() &&
-            settingsBounds.centerX() < nextBounds.centerX()) {
-            "Header controls are not ordered around the centered period at ${widthDp}dp"
-        }
-        check(hasExpectedControlBounds(widthDp, screenWidthPx, density)) {
-            "Header accessibility bounds do not match the requested ${widthDp}dp layout"
-        }
+        val issue = headerIssue(widthDp, screenWidthPx, density)
+        check(issue == null) { "Header at ${widthDp}dp: $issue" }
         check(nodes().none { it.text?.toString() == "일정 없음" }) { "Empty days should not show placeholder text" }
     }
+
+    /** Day numbers and weekdays are centered in each fully visible day cell: cell edges come from accessibility, the ink from a screenshot. */
+    private fun assertDayTextCentered(widthDp: Int, screenWidthPx: Int, density: Float) {
+        val start = currentPageStart()
+        val screen = checkNotNull(uiAutomation.takeScreenshot()) { "Screenshot unavailable for the day-centering check" }
+        val image = checkNotNull(screen.copy(Bitmap.Config.ARGB_8888, false))
+        screen.recycle()
+        try {
+            val panelLeft = (screenWidthPx - (widthDp * density).roundToInt()) / 2
+            // 10dp card padding + 8dp row padding bound the strip that compact widths scroll; partly visible cells are skipped.
+            val visibleLeft = panelLeft + 18 * density
+            val visibleRight = panelLeft + (widthDp - 18) * density
+            var checked = 0
+            for (offset in 0L until 7L) {
+                val day = start.plusDays(offset)
+                // A holiday name is extra start-aligned text in the same cell, so its ink would skew the center.
+                if (KoreanHolidays.nameOf(day) != null) continue
+                // Compact widths scroll the strip, so a cell outside the viewport may not be exposed at all.
+                val cell = dayCell(day)
+                if (cell == null) { check(widthDp < 380) { "Missing day cell for $day at ${widthDp}dp" }; continue }
+                val rect = bounds(cell)
+                if (rect.left < visibleLeft - 2 || rect.right > visibleRight + 2) continue
+                val background = image.getPixel(rect.left + (2 * density).roundToInt(), rect.centerY())
+                val inset = (10 * density).roundToInt() // rounded cell corners
+                var inkLeft = Int.MAX_VALUE
+                var inkRight = Int.MIN_VALUE
+                for (y in rect.top + inset until rect.bottom - inset) for (x in rect.left + 1 until rect.right - 1) {
+                    if (differs(image.getPixel(x, y), background)) {
+                        inkLeft = minOf(inkLeft, x)
+                        inkRight = maxOf(inkRight, x)
+                    }
+                }
+                check(inkRight >= inkLeft) { "No day text found in the $day cell at ${widthDp}dp: $rect" }
+                check(abs((inkLeft + inkRight) / 2f - rect.centerX()) <= 3 * density) {
+                    "Day text for $day is not centered at ${widthDp}dp: ink $inkLeft..$inkRight in $rect"
+                }
+                checked++
+            }
+            check(checked > 0) { "No fully visible day cell was checked at ${widthDp}dp" }
+        } finally {
+            image.recycle()
+        }
+    }
+
+    /** The clickable ancestor of the node whose text starts with the day of month; the period "10.8 — 10.14" does not match. */
+    private fun dayCell(day: LocalDate): AccessibilityNodeInfo? {
+        val label = Regex("^${day.dayOfMonth}(?![\\d.])")
+        val text = nodes().firstOrNull { label.containsMatchIn(it.text?.toString()?.trim().orEmpty()) } ?: return null
+        var cell: AccessibilityNodeInfo? = text
+        while (cell != null && !cell.isClickable) cell = cell.parent
+        return cell
+    }
+
+    private fun differs(a: Int, b: Int): Boolean =
+        abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) + abs(Color.blue(a) - Color.blue(b)) > 90
 
     private fun assertNoCornerMarks(activity: MainActivity, screenshot: File, widthDp: Int, density: Float) {
         val bitmap = checkNotNull(android.graphics.BitmapFactory.decodeFile(screenshot.path))
@@ -370,6 +454,10 @@ class CalendarHeaderInstrumentation : Instrumentation() {
 
     private fun clickText(text: String) = click(
         awaitNode("text: $text") { it.text?.toString() == text },
+    )
+
+    private fun clickToday() = click(
+        awaitNode("control: 오늘로 이동") { it.contentDescription?.toString() == "오늘로 이동" },
     )
 
     private fun awaitNode(label: String, matches: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo {

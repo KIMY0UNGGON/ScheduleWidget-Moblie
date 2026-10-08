@@ -1,9 +1,12 @@
 package com.schedulewidget.mobile.ui
 
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DisplayMode
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,10 +24,14 @@ import java.util.Locale
 internal val KoreanDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("M월 d일 (E)", Locale.KOREAN)
 internal val KoreanFullDateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy년 M월 d일 (E)", Locale.KOREAN)
 
+/** Picks one day on the month calendar. Both pickers hide the typed-date toggle: schedule dates are tapped, never typed. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DatePickDialog(initial: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
-    val state = rememberDatePickerState(initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+    val millis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = millis, initialDisplayedMonthMillis = millis, initialDisplayMode = DisplayMode.Picker,
+    )
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -34,16 +41,21 @@ internal fun DatePickDialog(initial: LocalDate, onDismiss: () -> Unit, onPick: (
             }) { Text("확인") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
-    ) { DatePicker(state = state) }
+    ) {
+        // With no input-mode fallback, a short (landscape) dialog must scroll the month grid instead of clipping its weeks.
+        DatePicker(state = state, modifier = Modifier.verticalScroll(rememberScrollState()), showModeToggle = false)
+    }
 }
 
 /** Selects the inclusive start and end of a continuous schedule. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DateRangePickDialog(start: LocalDate, end: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate, LocalDate) -> Unit) {
+    val startMillis = start.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
     val state = rememberDateRangePickerState(
-        initialSelectedStartDateMillis = start.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        initialSelectedStartDateMillis = startMillis,
         initialSelectedEndDateMillis = end.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        initialDisplayedMonthMillis = startMillis, initialDisplayMode = DisplayMode.Picker,
     )
     DatePickerDialog(
         onDismissRequest = onDismiss,
@@ -56,5 +68,5 @@ internal fun DateRangePickDialog(start: LocalDate, end: LocalDate, onDismiss: ()
             }) { Text("확인") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
-    ) { DateRangePicker(state = state, modifier = Modifier.heightIn(max = 520.dp)) }
+    ) { DateRangePicker(state = state, modifier = Modifier.heightIn(max = 520.dp), showModeToggle = false) }
 }

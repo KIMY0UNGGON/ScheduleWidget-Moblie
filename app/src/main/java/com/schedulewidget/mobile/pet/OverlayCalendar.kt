@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -89,8 +91,8 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 
-/** Panel width that shows all seven 104dp day columns: 7×104 + 6×6 gaps + 2×8 row padding + 2×10 outer padding. */
-const val OVERLAY_CALENDAR_FULL_WIDTH_DP = 7 * 104 + 6 * 6 + 2 * 8 + 2 * 10
+/** Tablet-size panel width used by the UI checks; its seven day columns show without horizontal scrolling. */
+const val OVERLAY_CALENDAR_FULL_WIDTH_DP = 800
 
 /** Compact 7-day agenda shown next to the floating pet on double-tap. */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -130,12 +132,29 @@ fun OverlayCalendar(
     BoxWithConstraints {
     val density = LocalDensity.current
     val compactHeader = maxWidth < 380.dp
-    val dayWidth = ((maxWidth.value - 48f) / 7f).coerceAtLeast(48f)
-    val panelTextScale = ((dayWidth / 64f) * (dayHeight / 260f).coerceIn(0.9f, 1.2f)).coerceIn(0.75f, 1.35f)
+    // Six 48dp controls need a 316dp panel (6×48 + 2×4 + 2×10); below that the week arrows flank the period.
+    val arrowsBesidePeriod = maxWidth < 316.dp
+    // 48 = 2×10 outer + 2×8 row padding + 6×2 gaps. Columns are 90% of a full share (centred, never below 48dp);
+    // text keeps the full-share scale so only the columns get narrower.
+    val fullDayWidth = ((maxWidth.value - 48f) / 7f).coerceAtLeast(48f)
+    val dayWidth = (fullDayWidth * 0.9f).coerceAtLeast(48f)
+    val panelTextScale = ((fullDayWidth / 64f) * (dayHeight / 260f).coerceIn(0.9f, 1.2f)).coerceIn(0.75f, 1.35f)
     val period = if (compactHeader) {
         "${start.monthValue}.${start.dayOfMonth}-${days.last().monthValue}.${days.last().dayOfMonth}"
     } else {
         "${start.monthValue}.${start.dayOfMonth} — ${days.last().monthValue}.${days.last().dayOfMonth}"
+    }
+    val previousButton: @Composable () -> Unit = {
+        IconButton(onClick = { movePage(-7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 7일", tint = theme.topInk) }
+    }
+    val nextButton: @Composable () -> Unit = {
+        IconButton(onClick = { movePage(7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 7일", tint = theme.topInk) }
+    }
+    // Back to the live today; like a fresh panel, it then follows midnight again.
+    val todayButton: @Composable () -> Unit = {
+        IconButton(onClick = { shownStart = today.toString(); followsToday = true }) {
+            Icon(Icons.Filled.Today, contentDescription = "오늘로 이동", tint = theme.topInk)
+        }
     }
     val themeButton: @Composable () -> Unit = {
         Box(Modifier.size(48.dp)) {
@@ -194,27 +213,32 @@ fun OverlayCalendar(
                 .background(theme.top).padding(start = 4.dp, end = 4.dp, top = 8.dp),
         ) {
             if (compactHeader) {
-                Box(
-                    Modifier.fillMaxWidth().heightIn(min = 20.dp).calendarMoveHandle(onMove),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        period, color = theme.topInk, fontWeight = FontWeight.Bold,
-                        fontSize = (15f * panelTextScale).coerceAtLeast(11f).sp,
-                        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (arrowsBesidePeriod) previousButton()
+                    Box(
+                        Modifier.weight(1f).heightIn(min = if (arrowsBesidePeriod) 48.dp else 20.dp).calendarMoveHandle(onMove),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            period, color = theme.topInk, fontWeight = FontWeight.Bold,
+                            fontSize = (15f * panelTextScale).coerceAtLeast(11f).sp,
+                            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (arrowsBesidePeriod) nextButton()
                 }
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { movePage(-7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 7일", tint = theme.topInk) }
+                    if (!arrowsBesidePeriod) previousButton()
                     themeButton()
+                    todayButton()
+                    Spacer(Modifier.weight(1f))
                     IconButton(onClick = { onOpenApp(Route.Mini) }) {
                         Icon(Icons.Filled.OpenInNew, contentDescription = "앱 열기", tint = theme.topInk)
                     }
-                    Spacer(Modifier.weight(1f))
                     IconButton(onClick = { onOpenApp(Route.Settings) }) {
                         Icon(Icons.Filled.Settings, contentDescription = "설정", tint = theme.topInk)
                     }
-                    IconButton(onClick = { movePage(7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 7일", tint = theme.topInk) }
+                    if (!arrowsBesidePeriod) nextButton()
                 }
             } else {
                 Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -230,24 +254,25 @@ fun OverlayCalendar(
                     }
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                         Row(Modifier.width(144.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { movePage(-7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 7일", tint = theme.topInk) }
+                            previousButton()
                             themeButton()
+                            todayButton()
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Row(Modifier.width(144.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { onOpenApp(Route.Mini) }) {
                                 Icon(Icons.Filled.OpenInNew, contentDescription = "앱 열기", tint = theme.topInk)
                             }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Row(Modifier.width(96.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { onOpenApp(Route.Settings) }) {
                                 Icon(Icons.Filled.Settings, contentDescription = "설정", tint = theme.topInk)
                             }
-                            IconButton(onClick = { movePage(7) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 7일", tint = theme.topInk) }
+                            nextButton()
                         }
                     }
                 }
             }
         }
-        // All seven dates share the available width; the user's font setting scales with the panel.
+        // The seven dates share 90% of the width, centred; the user's font setting scales with the panel.
         CompositionLocalProvider(
             LocalCalendarTextScale provides data.calendarTextFactor * panelTextScale,
             LocalCalendarToday provides today,
@@ -267,8 +292,9 @@ fun OverlayCalendar(
                 }
                 val pageEventsByDay = remember(pageEvents) { pageEvents.groupBy { it.date } }
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).horizontalScroll(rememberScrollState())
+                        .widthIn(min = (this@BoxWithConstraints.maxWidth - 36.dp).coerceAtLeast(0.dp)),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
                 ) {
                     for (day in pageDays) {
                         val holiday = KoreanHolidays.nameOf(day)
@@ -287,13 +313,16 @@ fun OverlayCalendar(
                                 .clickable { onAdd(day) }
                                 .padding(horizontal = 2.dp, vertical = 6.dp),
                         ) {
-                            Column {
-                                Text("${day.dayOfMonth}", color = dayColor, fontWeight = FontWeight.Bold, fontSize = calSp(17f))
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${day.dayOfMonth}", color = dayColor, fontWeight = FontWeight.Bold, fontSize = calSp(17f), textAlign = TextAlign.Center)
                                 Spacer(Modifier.height(1.dp))
                                 Text(day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN), color = dayColor, fontSize = calSp(11f),
-                                    modifier = Modifier.padding(bottom = 2.dp))
+                                    textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 2.dp))
                             }
-                            holiday?.let { Text(it, color = dayColor, fontSize = calSp(10f), lineHeight = calSp(12f), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            holiday?.let {
+                                Text(it, color = dayColor, fontSize = calSp(10f), lineHeight = calSp(12f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                            }
                             Column(
                                 Modifier.padding(top = 4.dp).verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(3.dp),

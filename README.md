@@ -1,17 +1,17 @@
 # 일정 위젯 · ScheduleWidget Notes
 
-**설치하려면 [Ver 0.1.1 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.1)에서 `ScheduleWidget-mobile-notes.apk`를 받으세요.** GitHub 로그인 없이 내려받을 수 있습니다.
+**설치하려면 [Ver 0.1.2 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.2)에서 `ScheduleWidget-mobile-notes.apk`를 받으세요.** GitHub 로그인 없이 내려받을 수 있습니다.
 
 [rnrdus5642/ScheduleWidget](https://github.com/rnrdus5642/ScheduleWidget)의 Windows 일정 위젯을 **Android로 옮기고 노트 필기 기능을 더한 모바일 버전**입니다.
 
 Android에서 일정·할 일, 문서 필기, 수업 녹음과 받아쓰기, 음악, 캐릭터를 함께 사용하는 앱입니다. 앱 목록에는 **일정 위젯**으로 표시됩니다.
 
-**현재 버전: Ver 0.1.1 · 최소 Android 8.0 · 64비트 ARM 기기 지원**
-Ver 0.1.1에서는 Flexcil 백업의 원본 녹음을 복원하고 해당 PDF·노트에 자동 연결합니다. Ver 0.1의 달력 기간 이동·넘김 효과·테마 메뉴와 공개 업데이트 기능도 포함합니다.
+**현재 버전: Ver 0.1.2 · 최소 Android 8.0 · 64비트 ARM 기기 지원**
+Ver 0.1.2에서는 앱 안 펫의 모양에 맞춰 이동·터치 영역을 잡고 투명한 부분의 터치는 뒤 화면으로 넘깁니다. 펫 달력의 날짜 칸을 줄여 가운데 정렬하고, 오늘로 돌아오는 버튼과 월간 달력 날짜 선택을 적용했습니다. 기존 Flexcil 녹음 복원·PDF 연결 기능도 유지합니다.
 
 ## 설치하고 시작하기
 
-1. [Ver 0.1.1 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.1)의 `Assets`에서 `ScheduleWidget-mobile-notes.apk`를 받습니다.
+1. [Ver 0.1.2 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.2)의 `Assets`에서 `ScheduleWidget-mobile-notes.apk`를 받습니다.
 2. 기기에서 APK를 열고 Android가 요청하는 `이 출처 허용`을 켜서 설치합니다.
 3. 앱을 열고 하단의 `달력 · 녹음 · 노트` 중 사용할 탭을 누릅니다. 탭이 없으면 설정에서 해당 기능을 켭니다.
 
@@ -214,9 +214,9 @@ PDF나 노트를 연 뒤 `⋮ → 노트 녹음`에서 연결된 녹음을 확�
 
 ## 앱 업데이트
 
-설정 → `앱 업데이트 → 업데이트 확인`에서 직접 확인합니다. **게시된 정식 릴리스만 대상이며 초안·사전 릴리스는 제외합니다.** 현재 배포 버전은 Ver 0.1.1입니다.
+설정 → `앱 업데이트 → 업데이트 확인`에서 직접 확인합니다. **게시된 정식 릴리스만 대상이며 초안·사전 릴리스는 제외합니다.** 현재 배포 버전은 Ver 0.1.2입니다.
 
-이전 버전에서 업데이트 확인을 누르면 Ver 0.1.1을 받을 수 있습니다. Ver 0.1.1의 내부 버전 코드는 6이며 기존 배포본과 같은 서명을 유지합니다. 기존 앱을 삭제하지 않고 덮어 설치할 수 있습니다.
+이전 버전에서 업데이트 확인을 누르면 Ver 0.1.2를 받을 수 있습니다. Ver 0.1.2의 내부 버전 코드는 7이며 기존 배포본과 같은 서명을 유지합니다. 기존 앱을 삭제하지 않고 덮어 설치할 수 있습니다.
 
 새 버전이 제공되면 `다운로드 후 설치`를 누르고 설정 화면에 머무릅니다. 다운로드 후 Android 설치 화면에서 확인합니다. 설정 화면을 나가면 다운로드가 취소됩니다.
 
@@ -234,10 +234,8 @@ PDF나 노트를 연 뒤 `⋮ → 노트 녹음`에서 연결된 녹음을 확�
 사용자 지원-개인정보 문의: **[ddd84860@gmail.com](mailto:ddd84860@gmail.com)**
 
 <details>
-<summary>관리자용 문서·검증 기록</summary>
+<summary>관리자용 Google 연동 안내</summary>
 
-[Calendar·Drive OAuth 게시 준비 자료](docs/GCP_PUBLISHING_PREP.md)와 [Google 연동 등록 안내](docs/GCP_SETUP.md)에서 필요한 앱 정보·권한·인증서·정책 자료를 확인합니다. 정책 웹 페이지 소스는 [docs/privacy.html](docs/privacy.html)에 있습니다. 자료 준비는 실제 계정 연결, GCP Console 등록·설정 변경, 정책 사이트 배포, 프로덕션 게시·Google 검증 완료를 뜻하지 않습니다.
-
-[노트 검토 기록](docs/NOTES_REVIEW.md), [백업 폴더 복원 기록](docs/FLEX_FOLDER_VALIDATION_20261006.json), [앱 업데이트 검증 기록](docs/UPDATE_VALIDATION_20261006.json)은 각각 기록 시점의 결과입니다. 현재 배포본 전체의 검증 완료를 뜻하지 않습니다.
+[Google 연동 등록 안내](docs/GCP_SETUP.md)에서 필요한 앱 정보·권한·인증서·정책 자료를 확인합니다. 정책 웹 페이지 소스는 [docs/privacy.html](docs/privacy.html)에 있습니다. 자료 준비는 실제 계정 연결, GCP Console 등록·설정 변경, 정책 사이트 배포, 프로덕션 게시·Google 검증 완료를 뜻하지 않습니다.
 
 </details>

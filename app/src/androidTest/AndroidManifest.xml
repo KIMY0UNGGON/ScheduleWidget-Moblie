@@ -21,6 +21,14 @@
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Service calendar popup and page turn regression" />
     <instrumentation
+        android:name="com.schedulewidget.mobile.pet.AppPetBoundsInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Visible pet bounds, edge movement and transparent touch passthrough" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.ui.ScheduleDateSelectionInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Monthly schedule date and range selection" />
+    <instrumentation
         android:name="com.schedulewidget.mobile.ReleaseUpgradeInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Release upgrade preserves app data" />

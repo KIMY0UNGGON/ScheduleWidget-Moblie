@@ -13,4 +13,6 @@ client_secret*.json
 credentials*.json
 /.snapshots/
 /output/
+/_workspace/
+/AUDIT-*.txt
 replay_pid*.log

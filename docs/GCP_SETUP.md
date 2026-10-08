@@ -2,7 +2,7 @@
 
 2026-10-07 기준. 공개 소스: [KIMY0UNGGON/ScheduleWidget-Moblie](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie).
 
-**현재 작업은 게시 준비까지입니다.** Calendar·Drive 입력값과 사용 사유, 시연 순서는 [앱 게시 준비](GCP_PUBLISHING_PREP.md)에 정리했습니다. Google 계정 연결·콘솔 등록·사이트 배포·검증 제출은 이번 작업에서 실행하지 않았습니다.
+**현재 작업은 게시 준비까지입니다.** Calendar·Drive 입력값과 사용 사유, 시연 순서는 아래에 정리했습니다. Google 계정 연결·콘솔 등록·사이트 배포·검증 제출은 실행하지 않았습니다.
 
 앱 코드와 정책 파일을 준비하는 것과 Cloud Console 등록·Google 검증 승인은 별도 작업입니다. 이 문서는 실제 승인 완료를 의미하지 않습니다. 기존 README의 프로젝트는 `gen-lang-client-0088309798`이며 Windows판과 공유합니다. 프로젝트의 실제 소유·설정은 운영자의 로그인으로 확인해야 합니다.
 

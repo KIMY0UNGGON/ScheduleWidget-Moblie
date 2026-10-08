@@ -9,6 +9,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
@@ -16,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -23,9 +25,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -80,6 +87,12 @@ fun CharacterSprite(
     interactive: Boolean = true,
     flipped: Boolean = false,
     animated: Boolean = true,
+    /**
+     * In-app pet only: touches (the taps and [drag]) land only on the drawn frame's painted silhouette, so transparent
+     * margins and holes pass them to what is behind; that frame's painted bounds are published to [painted].
+     */
+    painted: PaintedBounds? = null,
+    drag: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -111,16 +124,22 @@ fun CharacterSprite(
     val heightPx = with(LocalDensity.current) { height.toPx() }
     // Full-resolution sheet unless drawn really small, so frames are never upscaled from a half-size copy.
     val sample = if (!animated && height.value <= 80f) 4 else if (heightPx > Characters.CELL_H * 0.45f) 1 else 2
-    val bitmap by produceState<Bitmap?>(null, manifest, sample) {
-        value = withContext(Dispatchers.IO) {
-            when {
-                userUri != null -> Characters.userImage(context, userUri)
-                character != null && character.rows == 0 -> Characters.stillImage(character.image)
-                character != null -> Characters.sheet(context, character, sample)
-                else -> null
+    // The in-app pet's silhouettes are scanned with its image (once per bitmap), so it never shows without them; keyed on
+    // the manifest there so a new character never hit-tests or clamps with the previous one's image while loading.
+    val loaded by key(manifest.takeIf { painted != null }) {
+        produceState<Pair<Bitmap?, SpriteGeometry?>?>(null, manifest, sample) {
+            value = withContext(Dispatchers.IO) {
+                val image = when {
+                    userUri != null -> Characters.userImage(context, userUri)
+                    character != null && character.rows == 0 -> Characters.stillImage(character.image)
+                    character != null -> Characters.sheet(context, character, sample)
+                    else -> null
+                }
+                image to image?.takeIf { painted != null }?.let { spriteGeometry(it, character?.rows ?: 0) }
             }
         }
     }
+    val bitmap = loaded?.first
 
     var reaction by remember { mutableStateOf<String?>(null) }
     var reactionIndex by remember { mutableIntStateOf(0) }
@@ -167,11 +186,10 @@ fun CharacterSprite(
         val bmp = bitmap
         val aspect = bmp?.let { it.width.toFloat() / it.height } ?: 1f
         val image = remember(bmp) { bmp?.asImageBitmap() }
-        Canvas(
+        SpriteSurface(
             modifier.wrapContentSize().size(height * aspect, height)
-                .offset { IntOffset(0, (bounce.value * heightPx * 0.12f).roundToInt()) }
-                .then(tapModifier)
-                .semantics { contentDescription = "캐릭터" },
+                .offset { IntOffset(0, (bounce.value * heightPx * 0.12f).roundToInt()) },
+            "캐릭터", tapModifier, painted, drag, loaded, flipped, cell = { 0 }, paintedY = { bounce.value * 0.12f },
         ) {
             image?.let {
                 if (flipped) scale(-1f, 1f, pivot = center) {
@@ -274,16 +292,55 @@ fun CharacterSprite(
     }
 
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
-    Canvas(
+    SpriteSurface(
         // wrapContentSize keeps the frame's own aspect ratio even inside fillMaxWidth/fillMaxSize parents.
-        modifier.wrapContentSize().size(height * Characters.CELL_W.toFloat() / Characters.CELL_H, height)
-            .then(tapModifier)
-            .semantics { contentDescription = character.name },
+        modifier.wrapContentSize().size(height * Characters.CELL_W.toFloat() / Characters.CELL_H, height),
+        character.name, tapModifier, painted, drag, loaded, flipped, cell = { row * Characters.COLUMNS + col },
     ) {
         image?.let {
             if (flipped) scale(-1f, 1f, pivot = center) { drawFrame(it, character.rows, row, col) }
             else drawFrame(it, character.rows, row, col)
         }
+    }
+}
+
+/**
+ * Draws the sprite. The in-app pet ([painted] set) takes touches ([touch] and the caller's [drag]) on a child clipped to
+ * the drawn frame's silhouette: Compose hit-tests a clipped layer against its outline, so transparent margins and holes
+ * pass touches to what is behind. Nothing is touchable until the image loads; with no silhouette (failed or unreadable
+ * image, empty or missing frame) the whole box is.
+ */
+@Composable
+private fun SpriteSurface(
+    modifier: Modifier,
+    description: String,
+    touch: Modifier,
+    painted: PaintedBounds?,
+    drag: Modifier,
+    loaded: Pair<Bitmap?, SpriteGeometry?>?,
+    flipped: Boolean,
+    cell: () -> Int,
+    paintedY: () -> Float = { 0f },
+    onDraw: DrawScope.() -> Unit,
+) {
+    if (painted == null) {
+        Canvas(modifier.then(touch).semantics { contentDescription = description }, onDraw)
+        return
+    }
+    val geometry = loaded?.second
+    LaunchedEffect(painted, loaded, flipped) {
+        snapshotFlow {
+            if (loaded == null) null else (geometry?.bounds(cell(), flipped) ?: FULL_BOX).translate(Offset(0f, paintedY()))
+        }
+            .collect { painted.fraction = it }
+    }
+    Box(modifier.drawBehind(onDraw).semantics { contentDescription = description }) {
+        if (loaded != null) Box(
+            Modifier.matchParentSize()
+                .graphicsLayer { shape = geometry?.silhouette(cell(), flipped) ?: RectangleShape; clip = true }
+                .then(drag)
+                .then(touch),
+        )
     }
 }
 

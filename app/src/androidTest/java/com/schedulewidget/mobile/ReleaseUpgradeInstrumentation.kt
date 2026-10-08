@@ -19,13 +19,13 @@ class ReleaseUpgradeInstrumentation : Instrumentation() {
                 return@runCatching
             }
             val info = targetContext.packageManager.getPackageInfo(targetContext.packageName, 0)
-            check(info.versionName == "0.1.1" && PackageInfoCompat.getLongVersionCode(info) == 6L)
+            check(info.versionName == BuildConfig.VERSION_NAME && PackageInfoCompat.getLongVersionCode(info) == BuildConfig.VERSION_CODE.toLong())
             check(targetContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0)
             check(File(targetContext.filesDir, "upgrade-marker.txt").readText().trim() == "preserve-0.0-data")
         }.exceptionOrNull()
         finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED,
             Bundle().apply { putString("stream", failure?.stackTraceToString()
                 ?: if (seed) "PASS: saved disposable upgrade marker\n"
-                else "PASS: existing app data survived the non-debuggable v0.1.1/code6 release upgrade\n") })
+                else "PASS: existing app data survived the non-debuggable v${BuildConfig.VERSION_NAME}/code${BuildConfig.VERSION_CODE} release upgrade\n") })
     }
 }
