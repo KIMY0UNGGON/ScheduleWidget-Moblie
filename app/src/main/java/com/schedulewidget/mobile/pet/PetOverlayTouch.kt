@@ -20,6 +20,11 @@ internal class PetOverlayWindow(
     lateinit var view: ComposeView
     lateinit var touch: PetOverlayTouch
     val reactKey = mutableIntStateOf(0)
+    /** The drawn frame's painted pixels: they, not the transparent box, meet the walls and take touches. */
+    val painted = PaintedBounds()
+    /** Where the pet was asked to be; [params] holds that spot fitted to the current frame, so re-fits never drift. */
+    var wantX = params.x
+    var wantY = params.y
 }
 
 /** Raw-screen drag, long-press close target, and tap-count recognition for one overlay window. */
@@ -33,10 +38,14 @@ internal class PetOverlayTouch(
     private var startX = 0
     private var startY = 0
     private var dragging = false
+    internal val isDragging: Boolean get() = dragging
     private var held = false
+    private var tracking = false
     private var view: View? = null
     private val hold = Runnable {
         if (service.destroyed) return@Runnable
+        startX = pet.params.x
+        startY = pet.params.y
         held = true
         dragging = true
         taps.cancel()
@@ -49,8 +58,13 @@ internal class PetOverlayTouch(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, e: MotionEvent): Boolean {
         view = v
+        // Only a press on a painted pixel starts a gesture, which then follows the finger off the silhouette. Before API 33
+        // the window still swallows presses on transparent pixels; from 33 its touchable region leaves them out.
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) tracking = pet.painted.contains(e.x, e.y, v.width, v.height)
+        if (!tracking) return false
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                service.measureArea()
                 service.activePetIndex = pet.index
                 service.main.removeCallbacks(hold)
                 downX = e.rawX
@@ -65,6 +79,8 @@ internal class PetOverlayTouch(
                 val dx = e.rawX - downX
                 val dy = e.rawY - downY
                 if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
+                    startX = pet.params.x
+                    startY = pet.params.y
                     service.main.removeCallbacks(hold)
                     dragging = true
                     taps.cancel()
@@ -113,6 +129,7 @@ internal class PetOverlayTouch(
     fun cancel() {
         service.main.removeCallbacks(hold)
         taps.cancel()
+        tracking = false
         dragging = false
         held = false
     }

@@ -11,14 +11,20 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Size
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationCompat
@@ -37,9 +43,12 @@ import com.schedulewidget.mobile.record.PetRecordingBadge
 import com.schedulewidget.mobile.record.Recorder
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import kotlin.math.roundToInt
+import kotlin.math.pow
 
 /**
  * Keeps the pet floating over other apps. Drag to move, tap for a reaction, double-tap to open a small calendar
@@ -55,6 +64,13 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
     internal val petWindows = linkedMapOf<Int, PetOverlayWindow>()
     internal var activePetIndex = 0
     internal var destroyed = false
+    /** The pets' walls: the screen minus the visible system bars and cutout, in their params' coordinates. */
+    private var area = Size(0, 0)
+    private val opacityLimit by lazy {
+        if (Build.VERSION.SDK_INT >= 31)
+            (getSystemService(InputManager::class.java).maximumObscuringOpacityForTouch - 0.01f).coerceIn(0f, 1f)
+        else 1f
+    }
 
     // "Draw over other apps" can be revoked while we run: the system hides our windows, so stop instead of
     // lingering as an invisible foreground service. canDrawOverlays lags the callback a little, hence the delay.
@@ -82,6 +98,7 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
             stopSelf()
             return
         }
+        measureArea()
         syncPets(Repository.get(this).data.value)
         runCatching { appOps.startWatchingMode(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, packageName, opListener) }
         // While the app itself is open its own pet is shown; this one hides and returns when the app is closed.
@@ -94,6 +111,7 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     hideCloseTarget()
                 }
                 petWindows.values.forEach { it.view.visibility = if (appOpen) View.GONE else View.VISIBLE }
+                updatePetOpacity()
             }
         }
         lifecycleScope.launch {
@@ -117,7 +135,8 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         // Rotation / fold / resolution change: pull the pet and the panel back onto the new screen.
-        petWindows.values.forEach { moveTo(it, it.params.x, it.params.y) }
+        measureArea()
+        petWindows.values.forEach(::fit)
         panels.clamp()
     }
 
@@ -161,15 +180,16 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
         for (slot in live.values) {
             val existing = petWindows[slot.index]
             if (existing == null) addPetWindow(slot, data)
-            else {
-                val x = slot.floatingX ?: existing.params.x
-                val y = slot.floatingY ?: existing.params.y
-                if (x != existing.params.x || y != existing.params.y) moveTo(existing, x, y)
+            else if (!existing.touch.isDragging) {
+                val x = slot.floatingX ?: existing.wantX
+                val y = slot.floatingY ?: existing.wantY
+                if (x != existing.wantX || y != existing.wantY) moveTo(existing, x, y)
             }
         }
         if (activePetIndex !in petWindows) activePetIndex = petWindows.keys.firstOrNull() ?: 0
         val visible = !FloatingPet.appInForeground.value
         petWindows.values.forEach { it.view.visibility = if (visible) View.VISIBLE else View.GONE }
+        updatePetOpacity()
     }
 
     private fun addPetWindow(slot: PetSlot, data: com.schedulewidget.mobile.data.AppData) {
@@ -179,9 +199,18 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         val x = slot.floatingX ?: (data.floatingX + gap)
         val y = slot.floatingY ?: data.floatingY
-        val pet = PetOverlayWindow(index, slot.manifest, overlayParams().apply { this.x = x; this.y = y })
+        // NO_LIMITS lets the window pass the screen edges (negative x/y) so only its painted pixels meet the walls. Its
+        // origin stays below the status bar, the same as the panels placed from these params.
+        val params = overlayParams().apply {
+            flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            this.x = x
+            this.y = y
+        }
+        val pet = PetOverlayWindow(index, slot.manifest, params)
         val repo = Repository.get(this)
         pet.view = composeView {
+            // The first load and every frame, flip or bounce after it re-fit the window from its anchor.
+            LaunchedEffect(Unit) { snapshotFlow { pet.painted.frame }.collect { fit(pet) } }
             val d by repo.data.collectAsState()
             val current = d.petSlots().firstOrNull { it.index == index }
             val appOpen by FloatingPet.appInForeground.collectAsState()
@@ -195,8 +224,14 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
                         reactKey = pet.reactKey.intValue,
                         flipped = current.flipped,
                         animated = !appOpen,
+                        painted = pet.painted,
                     )
-                    if (d.stt.enabled && rec.isRecording) PetRecordingBadge(Modifier.align(Alignment.TopEnd).padding(4.dp))
+                    if (d.stt.enabled && rec.isRecording) PetRecordingBadge(
+                        Modifier.align(Alignment.TopEnd).offset {
+                            val body = pet.painted.fraction ?: FULL_BOX
+                            IntOffset(((body.right - 1f) * pet.view.width).roundToInt(), (body.top * pet.view.height).roundToInt())
+                        }.padding(4.dp)
+                    )
                 }
             }
         }
@@ -204,7 +239,7 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
         pet.view.setOnTouchListener(pet.touch)
         // Keep each pet on screen when its size changes or its saved spot is stale.
         pet.view.addOnLayoutChangeListener { v, l, t, r, b, ol, ot, or, ob ->
-            if (r - l != or - ol || b - t != ob - ot) moveTo(pet, pet.params.x, pet.params.y)
+            if (r - l != or - ol || b - t != ob - ot) fit(pet)
         }
         runCatching { windows.addView(pet.view, pet.params) }
             .onSuccess { petWindows[index] = pet }
@@ -253,17 +288,67 @@ class PetOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /** True when the pet's centre is over the ✕ target (with some slack so it is easy to hit). */
-    internal fun overCloseTarget(pet: View): Boolean = closeTarget.containsCenter(pet)
+    internal fun overCloseTarget(pet: View): Boolean = closeTarget.containsCenter(
+        pet, petWindows.values.firstOrNull { it.view === pet }?.painted?.fraction ?: FULL_BOX,
+    )
 
+    /**
+     * Asks [pet] to be at [x], [y] (its anchor) and shows it as near as keeps the drawn frame's painted pixels inside
+     * [area]: transparent margins may hang past the walls.
+     */
     internal fun moveTo(pet: PetOverlayWindow, x: Int, y: Int) {
+        pet.wantX = x
+        pet.wantY = y
         val v = pet.view
-        val screen = resources.displayMetrics
-        val nx = x.coerceIn(-v.width / 3, (screen.widthPixels - v.width * 2 / 3).coerceAtLeast(-v.width / 3))
-        val ny = y.coerceIn(0, (screen.heightPixels - v.height).coerceAtLeast(0))
+        if (!v.isLaidOut) return
+        val p = pet.painted.fraction ?: FULL_BOX
+        val minX = -(p.left * v.width).roundToInt()
+        val maxX = area.width - (p.right * v.width).roundToInt()
+        val minY = -(p.top * v.height).roundToInt()
+        val maxY = area.height - (p.bottom * v.height).roundToInt()
+        val nx = x.coerceIn(minX, maxX.coerceAtLeast(minX))
+        val ny = y.coerceIn(minY, maxY.coerceAtLeast(minY))
         if (nx == pet.params.x && ny == pet.params.y) return
         pet.params.x = nx
         pet.params.y = ny
         if (v.isAttachedToWindow) runCatching { windows.updateViewLayout(v, pet.params) }
+        updatePetOpacity()
+    }
+
+    /** Re-fits [pet] from its anchor to the frame now drawn; from API 33 only its painted pixels are touchable. */
+    private fun fit(pet: PetOverlayWindow) {
+        moveTo(pet, pet.wantX, pet.wantY)
+        if (Build.VERSION.SDK_INT >= 33) {
+            pet.view.rootSurfaceControl?.setTouchableRegion(pet.painted.region(pet.view.width, pet.view.height))
+        }
+        updatePetOpacity()
+    }
+
+    /** Android blocks input behind opaque overlay frames even where their touchable region has a hole. */
+    private fun updatePetOpacity() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val visible = petWindows.values.filter { it.view.isShown }
+        fun frame(pet: PetOverlayWindow) = Rect(pet.params.x, pet.params.y, pet.params.x + pet.view.width, pet.params.y + pet.view.height)
+        for (pet in visible) {
+            val overlaps = visible.count { Rect.intersects(frame(pet), frame(it)) }.coerceAtLeast(1)
+            val alpha = 1f - (1f - opacityLimit).toDouble().pow(1.0 / overlaps).toFloat()
+            if (pet.params.alpha == alpha) continue
+            pet.params.alpha = alpha
+            if (pet.view.isAttachedToWindow) runCatching { windows.updateViewLayout(pet.view, pet.params) }
+        }
+    }
+
+    /** Re-reads [area]. The pet windows' origin is the top-left of the screen minus the same insets. */
+    internal fun measureArea() {
+        area = if (Build.VERSION.SDK_INT >= 30) {
+            val metrics = windows.currentWindowMetrics
+            val bars = metrics.windowInsets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            Size(metrics.bounds.width() - bars.left - bars.right, metrics.bounds.height() - bars.top - bars.bottom)
+        } else {
+            // ponytail: no insets query before API 30; the app area still counts the status bar, so the bottom wall can
+            // sit up to a status-bar height low there. Measure the window origin if those devices matter.
+            resources.displayMetrics.let { Size(it.widthPixels, it.heightPixels) }
+        }
     }
 
     internal fun closePanel() = panels.close()

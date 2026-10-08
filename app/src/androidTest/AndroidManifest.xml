@@ -4,6 +4,10 @@
     </queries>
     <application>
         <activity
+            android:name="com.schedulewidget.mobile.pet.FloatingPetBoundsBackgroundActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity
             android:name="com.schedulewidget.mobile.music.PlaybackServiceAttackerActivity"
             android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
@@ -20,6 +24,10 @@
         android:name="com.schedulewidget.mobile.pet.FloatingCalendarInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"
         android:label="Service calendar popup and page turn regression" />
+    <instrumentation
+        android:name="com.schedulewidget.mobile.pet.FloatingPetBoundsInstrumentation"
+        android:targetPackage="com.schedulewidget.mobile"
+        android:label="Native floating pet visible top boundary and transparent input region" />
     <instrumentation
         android:name="com.schedulewidget.mobile.pet.AppPetBoundsInstrumentation"
         android:targetPackage="com.schedulewidget.mobile"

@@ -1,17 +1,19 @@
 # 일정 위젯 · ScheduleWidget Notes
 
-**설치하려면 [Ver 0.1.2 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.2)에서 `ScheduleWidget-mobile-notes.apk`를 받으세요.** GitHub 로그인 없이 내려받을 수 있습니다.
+**설치하려면 [Ver 0.1.3 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.3)에서 `ScheduleWidget-mobile-notes.apk`를 받으세요.** GitHub 로그인 없이 내려받을 수 있습니다.
 
 [rnrdus5642/ScheduleWidget](https://github.com/rnrdus5642/ScheduleWidget)의 Windows 일정 위젯을 **Android로 옮기고 노트 필기 기능을 더한 모바일 버전**입니다.
 
 Android에서 일정·할 일, 문서 필기, 수업 녹음과 받아쓰기, 음악, 캐릭터를 함께 사용하는 앱입니다. 앱 목록에는 **일정 위젯**으로 표시됩니다.
 
-**현재 버전: Ver 0.1.2 · 최소 Android 8.0 · 64비트 ARM 기기 지원**
-Ver 0.1.2에서는 앱 안 펫의 모양에 맞춰 이동·터치 영역을 잡고 투명한 부분의 터치는 뒤 화면으로 넘깁니다. 펫 달력의 날짜 칸을 줄여 가운데 정렬하고, 오늘로 돌아오는 버튼과 월간 달력 날짜 선택을 적용했습니다. 기존 Flexcil 녹음 복원·PDF 연결 기능도 유지합니다.
+**현재 버전: Ver 0.1.3 · 최소 Android 8.0 · 64비트 ARM 기기 지원**
+Ver 0.1.3에서는 홈 화면·다른 앱 위에 떠 있는 펫도 실제 그림 기준으로 이동하도록 고쳤습니다. 위쪽 투명 여백이 먼저 벽에 걸리던 문제를 수정하고, 투명한 부분에서 펫 조작이 시작되지 않도록 했습니다. 0.1.2의 앱 안 펫 히트박스·달력 개선과 기존 Flexcil 녹음 복원·PDF 연결 기능도 유지합니다.
+
+Android 13 이상에서는 투명한 펫 여백·구멍의 터치를 뒤 앱으로 넘깁니다. 시스템의 가림 제한에 맞춰 펫 창이 약간 옅게 표시되고, 여러 펫이 겹치면 더 옅어집니다. Android 12 이하에서는 투명 부분에서 펫이 반응하지 않지만 뒤 앱으로 터치가 전달되지는 않습니다.
 
 ## 설치하고 시작하기
 
-1. [Ver 0.1.2 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.2)의 `Assets`에서 `ScheduleWidget-mobile-notes.apk`를 받습니다.
+1. [Ver 0.1.3 배포 페이지](https://github.com/KIMY0UNGGON/ScheduleWidget-Moblie/releases/tag/v0.1.3)의 `Assets`에서 `ScheduleWidget-mobile-notes.apk`를 받습니다.
 2. 기기에서 APK를 열고 Android가 요청하는 `이 출처 허용`을 켜서 설치합니다.
 3. 앱을 열고 하단의 `달력 · 녹음 · 노트` 중 사용할 탭을 누릅니다. 탭이 없으면 설정에서 해당 기능을 켭니다.
 
@@ -214,9 +216,9 @@ PDF나 노트를 연 뒤 `⋮ → 노트 녹음`에서 연결된 녹음을 확�
 
 ## 앱 업데이트
 
-설정 → `앱 업데이트 → 업데이트 확인`에서 직접 확인합니다. **게시된 정식 릴리스만 대상이며 초안·사전 릴리스는 제외합니다.** 현재 배포 버전은 Ver 0.1.2입니다.
+설정 → `앱 업데이트 → 업데이트 확인`에서 직접 확인합니다. **게시된 정식 릴리스만 대상이며 초안·사전 릴리스는 제외합니다.** 현재 배포 버전은 Ver 0.1.3입니다.
 
-이전 버전에서 업데이트 확인을 누르면 Ver 0.1.2를 받을 수 있습니다. Ver 0.1.2의 내부 버전 코드는 7이며 기존 배포본과 같은 서명을 유지합니다. 기존 앱을 삭제하지 않고 덮어 설치할 수 있습니다.
+이전 버전에서 업데이트 확인을 누르면 Ver 0.1.3을 받을 수 있습니다. Ver 0.1.3의 내부 버전 코드는 8이며 기존 배포본과 같은 서명을 유지합니다. 기존 앱을 삭제하지 않고 덮어 설치할 수 있습니다.
 
 새 버전이 제공되면 `다운로드 후 설치`를 누르고 설정 화면에 머무릅니다. 다운로드 후 Android 설치 화면에서 확인합니다. 설정 화면을 나가면 다운로드가 취소됩니다.
 

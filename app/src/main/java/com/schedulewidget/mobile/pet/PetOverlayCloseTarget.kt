@@ -68,15 +68,15 @@ internal class PetOverlayCloseTarget(
         hovering = false
     }
 
-    fun containsCenter(pet: View): Boolean {
+    fun containsCenter(pet: View, body: androidx.compose.ui.geometry.Rect): Boolean {
         val target = view ?: return false
         if (!target.isAttachedToWindow || target.width == 0 || !pet.isAttachedToWindow) return false
         val targetPosition = IntArray(2).also { target.getLocationOnScreen(it) }
         val petPosition = IntArray(2).also { pet.getLocationOnScreen(it) }
         val targetX = targetPosition[0] + target.width / 2f
         val targetY = targetPosition[1] + target.height / 2f
-        val petX = petPosition[0] + pet.width / 2f
-        val petY = petPosition[1] + pet.height / 2f
+        val petX = petPosition[0] + body.center.x * pet.width
+        val petY = petPosition[1] + body.center.y * pet.height
         val reach = target.width * 1.1f
         return (petX - targetX) * (petX - targetX) + (petY - targetY) * (petY - targetY) < reach * reach
     }
